@@ -6,8 +6,10 @@
   "scripts": {
     "discover": "tsx src/discover.ts",
     "fetch": "tsx src/fetch.ts",
+    "extract": "tsx src/extract.ts",
     "normalize": "tsx src/normalize.ts",
     "chunk": "tsx src/chunk.ts",
+    "enrich": "tsx src/enrich.ts",
     "embed": "tsx src/embed.ts",
     "ingest": "tsx src/ingest.ts",
     "test": "tsx src/test.ts",
@@ -25,8 +27,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@google/genai": "^2.22.0",
     "@google/generative-ai": "^0.24.1",
     "@lancedb/lancedb": "^0.38.0",
+    "@llamaindex/llama-cloud": "^2.16.0",
     "dotenv": "^17.4.2"
   },
   "devDependencies": {
