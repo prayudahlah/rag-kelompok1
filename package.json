@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@llamaindex/llama-cloud": "^2.16.0"
+  }
+}

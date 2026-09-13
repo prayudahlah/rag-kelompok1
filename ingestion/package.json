@@ -1,0 +1,42 @@
+{
+  "name": "ingestion",
+  "version": "1.0.0",
+  "description": "RAG ingestion pipeline for Pelindungan Data Pribadi Indonesia",
+  "type": "module",
+  "scripts": {
+    "discover": "tsx src/discover.ts",
+    "fetch": "tsx src/fetch.ts",
+    "extract": "tsx src/extract.ts",
+    "normalize": "tsx src/normalize.ts",
+    "chunk": "tsx src/chunk.ts",
+    "enrich": "tsx src/enrich.ts",
+    "embed": "tsx src/embed.ts",
+    "ingest": "tsx src/ingest.ts",
+    "test": "tsx src/test.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "rag",
+    "ingestion",
+    "pdp",
+    "indonesia",
+    "lancedb",
+    "gemini"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google/genai": "^2.22.0",
+    "@google/generative-ai": "^0.24.1",
+    "@lancedb/lancedb": "^0.38.0",
+    "@llamaindex/llama-cloud": "^2.16.0",
+    "apache-arrow": "^21.2.0",
+    "dotenv": "^17.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}
