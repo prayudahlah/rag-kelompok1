@@ -10,16 +10,20 @@ function requireEnv(name: string): string {
   return value;
 }
 
-export const config = {
-  pasalToken: requireEnv("PASAL_MCP_TOKEN"),
-  geminiApiKey: requireEnv("GEMINI_API_KEY"),
+function optionalEnv(name: string): string | undefined {
+  return process.env[name] || undefined;
+}
 
-  pasalApiUrl: "https://pasal.id/api/v1",
+export const config = {
+  llamaCloudApiKey: requireEnv("LLAMA_CLOUD_API_KEY"),
+
+  geminiApiKey: optionalEnv("GEMINI_API_KEY"),
 
   data: {
     raw: "data/raw",
+    extracted: "data/extracted",
     normalized: "data/normalized",
     chunks: "data/chunks",
-    lancedb: "data/lancedb"
-  }
+    lancedb: "data/lancedb",
+  },
 };
