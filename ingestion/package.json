@@ -31,6 +31,7 @@
     "@google/generative-ai": "^0.24.1",
     "@lancedb/lancedb": "^0.38.0",
     "@llamaindex/llama-cloud": "^2.16.0",
+    "apache-arrow": "^21.2.0",
     "dotenv": "^17.4.2"
   },
   "devDependencies": {
