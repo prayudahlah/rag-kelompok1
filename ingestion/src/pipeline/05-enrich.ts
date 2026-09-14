@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 
-import type { Chunk } from "./types.js";
+import type { Chunk } from "../utils/types.js";
 
 const INPUT_PATH = path.resolve(
   "data/chunks/uu27-2022.chunks.json",

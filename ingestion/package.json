@@ -2,40 +2,31 @@
   "name": "ingestion",
   "version": "1.0.0",
   "description": "RAG ingestion pipeline for Pelindungan Data Pribadi Indonesia",
-  "type": "module",
   "scripts": {
-    "discover": "tsx src/discover.ts",
-    "fetch": "tsx src/fetch.ts",
-    "extract": "tsx src/extract.ts",
-    "normalize": "tsx src/normalize.ts",
-    "chunk": "tsx src/chunk.ts",
-    "enrich": "tsx src/enrich.ts",
-    "embed": "tsx src/embed.ts",
-    "ingest": "tsx src/ingest.ts",
-    "test": "tsx src/test.ts",
+    "test": "tsx src/utils/test.ts",
+    "chunk": "tsx src/pipeline/04-chunk.ts",
+    "enrich": "tsx src/pipeline/05-enrich.ts",
+    "embed": "tsx src/pipeline/06-embed.ts",
+    "db:build": "tsx src/utils/vectordb.ts",
+    "typecheck": "tsc --noEmit",
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "ingest": "tsx src/pipeline/07-ingest.ts",
+    "extract": "tsx src/pipeline/02-extract.ts",
+    "normalize": "tsx src/pipeline/03-normalize.ts",
+    "fetch": "tsx src/pipeline/01-fetch.ts"
   },
-  "keywords": [
-    "rag",
-    "ingestion",
-    "pdp",
-    "indonesia",
-    "lancedb",
-    "gemini"
-  ],
+  "keywords": [],
   "author": "",
   "license": "ISC",
+  "type": "module",
   "dependencies": {
     "@google/genai": "^2.22.0",
-    "@google/generative-ai": "^0.24.1",
     "@lancedb/lancedb": "^0.38.0",
     "@llamaindex/llama-cloud": "^2.16.0",
-    "apache-arrow": "^21.2.0",
     "dotenv": "^17.4.2"
   },
   "devDependencies": {
-    "@types/node": "^22.20.2",
+    "@types/node": "^24.13.4",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2"
   }

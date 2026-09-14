@@ -2,7 +2,7 @@
 // Structure-aware chunking for UU No. 27 Tahun 2022
 // Step 7 – Structure-Aware Chunking
 
-import type { Chunk } from "./types.js";
+import type { Chunk } from "../utils/types.js";
 
 const DOCUMENT_ID = "uu-27-2022";
 

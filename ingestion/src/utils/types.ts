@@ -37,3 +37,50 @@ export interface ValidationReport {
   pageProvenanceOk: boolean;
   pageProvenanceIssues: number;
 }
+
+export interface ParseOptions {
+  tier: string;
+  version: string;
+}
+
+export interface SourceDocument {
+  document_id: string;
+  doc_type: string;
+  doc_number: number;
+  doc_year: number;
+  doc_title: string;
+  status: string;
+  source: string;
+  source_url: string;
+  parse?: ParseOptions;
+  enabled?: boolean;
+}
+
+export interface CorpusSources {
+  corpus_version: string;
+  parse_defaults?: ParseOptions;
+  documents: SourceDocument[];
+}
+
+export type ManifestStatus =
+  | "missing"
+  | "downloaded"
+  | "verified"
+  | "manual-required";
+
+export interface ManifestEntry {
+  document_id: string;
+  source_url: string;
+  status: ManifestStatus;
+  retrieved_at: string | null;
+  bytes: number | null;
+  sha256: string | null;
+  extracted_at?: string | null;
+  extracted_sha256?: string | null;
+}
+
+export interface CorpusManifest {
+  corpus_version: string;
+  generated_at: string | null;
+  documents: Record<string, ManifestEntry>;
+}

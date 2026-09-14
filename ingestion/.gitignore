@@ -4,5 +4,6 @@ dist/
 
 data/raw/
 data/lancedb/
+corpus/manifest.json
 
 *.log
