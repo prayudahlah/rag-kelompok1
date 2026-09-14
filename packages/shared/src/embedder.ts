@@ -1,7 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
 
-import { getGeminiApiKey } from "./config.js";
-
 export const MODEL = "gemini-embedding-001";
 export const DIMENSION = 768;
 
@@ -22,16 +20,25 @@ export interface Embedder {
 }
 
 export interface EmbedderOptions {
-  /**
-   * Tipe tugas embedding Gemini, mis. "RETRIEVAL_DOCUMENT"
-   * (indexing) atau "RETRIEVAL_QUERY" (runtime).
-   */
   taskType?: string;
+  apiKey?: string;
 }
 
 interface ErrorDetail {
   "@type"?: string;
   retryDelay?: string;
+}
+
+function resolveApiKey(explicit?: string): string {
+  const apiKey = explicit ?? process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error(
+      "GEMINI_API_KEY belum diatur (env atau opsi apiKey).",
+    );
+  }
+
+  return apiKey;
 }
 
 function parseErrorMessage(
@@ -132,7 +139,7 @@ export function createEmbedder(
   options: EmbedderOptions = {},
 ): Embedder {
   const ai = new GoogleGenAI({
-    apiKey: getGeminiApiKey(),
+    apiKey: resolveApiKey(options.apiKey),
   });
 
   async function embedBatch(
@@ -185,7 +192,7 @@ export function createEmbedder(
 
   async function withRetry<T>(
     fn: () => Promise<T>,
-    retries = 5,
+    retries = 3,
   ): Promise<T> {
     let lastError: unknown;
 
@@ -199,10 +206,7 @@ export function createEmbedder(
       } catch (error) {
         lastError = error;
 
-        if (
-          !isTransient(error) ||
-          attempt === retries
-        ) {
+        if (!isTransient(error) || attempt === retries) {
           break;
         }
 
@@ -211,26 +215,15 @@ export function createEmbedder(
         let waitMs: number;
 
         if (status === 429) {
-          const serverDelay =
-            getRetryDelayMs(error);
+          const serverDelay = getRetryDelayMs(error);
 
           waitMs =
             serverDelay !== undefined
-              ? serverDelay + 2000
-              : Math.min(
-                  90000,
-                  1000 * 2 ** attempt,
-                );
+              ? serverDelay + 1000
+              : Math.min(10000, 1000 * 2 ** attempt);
         } else {
-          waitMs = Math.min(
-            90000,
-            1000 * 2 ** attempt,
-          );
+          waitMs = Math.min(10000, 1000 * 2 ** attempt);
         }
-
-        console.warn(
-          `  retry ${attempt + 1}/${retries} dalam ${waitMs}ms ...`,
-        );
 
         await new Promise((resolve) =>
           setTimeout(resolve, waitMs),
