@@ -10,11 +10,18 @@ export interface SourceChunk {
   bab_title: string | null;
 }
 
+export interface HistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export interface ChatRequest {
   question: string;
+  history?: HistoryMessage[];
 }
 
 export interface ChatResponse {
   answer: string;
   sources: SourceChunk[];
+  rewrittenQuery?: string;
 }

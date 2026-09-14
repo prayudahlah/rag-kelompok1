@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import type { Message, HistorySession } from "../types/chat";
 import { sendQuestion } from "../services/chatService";
 import { saveSession, loadHistory, deleteSession } from "../services/historyService";
@@ -9,11 +9,14 @@ function nextId(): string {
   return `msg-${Date.now()}-${idCounter}`;
 }
 
+const HISTORY_WINDOW = 6;
+
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistorySession[]>(() => loadHistory());
+  const messagesRef = useRef<Message[]>([]);
 
   const sendMessage = useCallback(async (question: string) => {
     const userMessage: Message = {
@@ -23,12 +26,18 @@ export function useChat() {
       timestamp: new Date(),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    const currentMessages = messagesRef.current;
+    const historyForRewrite = currentMessages.slice(-HISTORY_WINDOW);
+
+    setMessages((prev) => {
+      messagesRef.current = [...prev, userMessage];
+      return [...prev, userMessage];
+    });
     setLoading(true);
     setError(null);
 
     try {
-      const response = await sendQuestion(question);
+      const response = await sendQuestion(question, historyForRewrite);
 
       const assistantMessage: Message = {
         id: nextId(),
@@ -40,6 +49,7 @@ export function useChat() {
 
       setMessages((prev) => {
         const updated = [...prev, assistantMessage];
+        messagesRef.current = updated;
         saveSession(updated);
         setHistory(loadHistory());
         return updated;
@@ -52,6 +62,7 @@ export function useChat() {
   }, []);
 
   const clearChat = useCallback(() => {
+    messagesRef.current = [];
     setMessages([]);
     setError(null);
   }, []);
@@ -61,6 +72,7 @@ export function useChat() {
   }, []);
 
   const loadSession = useCallback((session: HistorySession) => {
+    messagesRef.current = session.messages;
     setMessages(session.messages);
     setError(null);
   }, []);

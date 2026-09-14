@@ -13,6 +13,7 @@ export interface Source {
 export interface ChatResponse {
   answer: string;
   sources: Source[];
+  rewrittenQuery?: string;
 }
 
 export interface Message {

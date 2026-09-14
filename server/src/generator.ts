@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { config } from "./config.js";
 import type { SourceChunk } from "./types.js";
 
-const GENERATION_MODEL = "gemini-2.0-flash";
+const GENERATION_MODEL = "gemini-3.6-flash";
 
 export async function generate(
   question: string,
@@ -24,6 +24,10 @@ ATURAN:
 - Jika jawaban tidak ada di konteks, katakan "Saya tidak menemukan jawaban di UU PDP"
 - Sertakan referensi Pasal/Ayat saat menjawab
 - Gunakan bahasa Indonesia yang jelas dan mudah dipahami
+- Jawab dengan bahasa natural, seolah-olah kamu sedang menjelaskan kepada seseorang yang bukan ahli hukum
+- Gunakan analogi sederhana jika diperlukan untuk menjelaskan konsep hukum
+- Hindari bahasa kaku atau terlalu formal yang sulit dipahami
+- Struktur jawaban dengan poin-poin atau paragraf yang rapi agar mudah dibaca
 
 KONTEKS:
 ${contextStr}
