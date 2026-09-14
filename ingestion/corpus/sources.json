@@ -1,0 +1,31 @@
+{
+  "corpus_version": "pdp-v1",
+  "parse_defaults": {
+    "tier": "agentic",
+    "version": "2026-09-09"
+  },
+  "documents": [
+    {
+      "document_id": "uu-27-2022",
+      "doc_type": "UU",
+      "doc_number": 27,
+      "doc_year": 2022,
+      "doc_title": "Undang-Undang Nomor 27 Tahun 2022 tentang Pelindungan Data Pribadi",
+      "status": "berlaku",
+      "source": "JDIH BPK",
+      "source_url": "https://peraturan.bpk.go.id/Download/224884/UU%20Nomor%2027%20Tahun%202022.pdf",
+      "enabled": true
+    },
+    {
+      "document_id": "pp-71-2019",
+      "doc_type": "PP",
+      "doc_number": 71,
+      "doc_year": 2019,
+      "doc_title": "Peraturan Pemerintah Nomor 71 Tahun 2019 tentang Penyelenggaraan Sistem dan Transaksi Elektronik",
+      "status": "berlaku",
+      "source": "JDIH Kemenkeu",
+      "source_url": "https://jdih.kemenkeu.go.id/api/download/fulltext/2019/71TAHUN2019PP.pdf",
+      "enabled": true
+    }
+  ]
+}

@@ -1,8 +1,13 @@
+.env
 node_modules/
 dist/
-.env
-*.log
 
-data/lancedb/
+# Generated pipeline artifacts - jangan di-commit
 data/raw/
-data/chunks/*.embedded.json
+data/parsed/
+data/normalized/
+data/chunks/
+data/lancedb/
+corpus/manifest.json
+
+*.log

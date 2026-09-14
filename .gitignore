@@ -1,20 +1,12 @@
-# Dependencies
+.env
 node_modules/
-
-# Build
 dist/
 
-# Environment
-.env
+# Generated pipeline artifacts - jangan di-commit
+data/raw/
+data/parsed/
+data/normalized/
+data/chunks/
+data/lancedb/
 
-# Logs
 *.log
-
-# Database (bisa regenerate dari embedded.json)
-ingestion/data/lancedb/
-
-# Raw PDFs
-ingestion/data/raw/
-
-# Embedded JSON (bisa regenerate dari chunks.json + Gemini API)
-ingestion/data/chunks/*.embedded.json
