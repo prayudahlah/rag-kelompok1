@@ -22,8 +22,8 @@ import type {
 } from "../utils/types.js";
 
 const RAW_DIR = path.resolve(config.data.raw);
-const EXTRACTED_DIR = path.resolve(
-  config.data.extracted,
+const PARSED_DIR = path.resolve(
+  config.data.parsed,
 );
 
 const DEFAULT_PARSE: ParseOptions = {
@@ -37,7 +37,7 @@ async function main(): Promise<void> {
     sources.corpus_version,
   );
 
-  fs.mkdirSync(EXTRACTED_DIR, {
+  fs.mkdirSync(PARSED_DIR, {
     recursive: true,
   });
 
@@ -53,7 +53,7 @@ async function main(): Promise<void> {
   );
 
   console.log(
-    `[extract] ${enabled.length} dokumen aktif`,
+    `[parse] ${enabled.length} dokumen aktif`,
   );
 
   let failures = 0;
@@ -81,29 +81,30 @@ async function main(): Promise<void> {
     const pdfSha = await sha256File(pdfPath);
 
     const mdPath = path.join(
-      EXTRACTED_DIR,
+      PARSED_DIR,
       `${doc.document_id}.md`,
     );
 
     const jsonPath = path.join(
-      EXTRACTED_DIR,
+      PARSED_DIR,
       `${doc.document_id}.parse-result.json`,
     );
+
+    const parse = doc.parse ?? defaults;
+    const signature = parseSignature(pdfSha, parse);
 
     const existing =
       manifest.documents[doc.document_id];
 
     if (
       fs.existsSync(mdPath) &&
-      existing?.extracted_sha256 === pdfSha
+      existing?.parse_signature === signature
     ) {
       console.log(
-        "  skip: hasil parse sudah ada & checksum cocok",
+        "  skip: hasil parse sudah ada & signature cocok",
       );
       continue;
     }
-
-    const parse = doc.parse ?? defaults;
 
     console.log(
       `  parse (tier=${parse.tier}, version=${parse.version})`,
@@ -122,7 +123,7 @@ async function main(): Promise<void> {
         expand: ["markdown"],
       });
 
-      const markdown = extractMarkdown(result);
+      const markdown = parseMarkdown(result);
 
       fs.writeFileSync(
         jsonPath,
@@ -144,8 +145,9 @@ async function main(): Promise<void> {
 
       manifest.documents[doc.document_id] = {
         ...entry,
-        extracted_at: new Date().toISOString(),
-        extracted_sha256: pdfSha,
+        parsed_at: new Date().toISOString(),
+        parsed_sha256: pdfSha,
+        parse_signature: signature,
       };
 
       console.log(
@@ -170,47 +172,108 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log("\nSTEP 2 (extract) : PASS");
+  console.log("\nSTEP 2 (parse) : PASS");
 }
 
-function extractMarkdown(result: unknown): string {
+/**
+ * Signature parse = gabungan checksum PDF + pengaturan parser.
+ * Dipakai untuk memutuskan skip/re-parse: jika salah satu berubah
+ * (mis. tier atau version), hasil lama tidak dipakai lagi.
+ */
+function parseSignature(
+  pdfSha: string,
+  parse: ParseOptions,
+): string {
+  return `${pdfSha}:${parse.tier}:${parse.version}`;
+}
+
+interface ParsedPage {
+  page_number?: number;
+  markdown?: string;
+  success?: boolean;
+}
+
+interface MarkdownPages {
+  pages?: ParsedPage[];
+}
+
+/**
+ * Menggabungkan halaman-halaman markdown menjadi satu string,
+ * dengan menyisipkan kembali penanda "--- Halaman N ---" dari
+ * `page_number` (penanda ini dibutuhkan tahap chunking untuk
+ * provenance halaman).
+ */
+function joinPages(
+  pages: ParsedPage[],
+): string | null {
+  const usable = pages.filter(
+    (page) =>
+      page.success !== false &&
+      typeof page.markdown === "string",
+  );
+
+  if (usable.length === 0) {
+    return null;
+  }
+
+  return usable
+    .map((page, index) => {
+      const number =
+        typeof page.page_number === "number"
+          ? page.page_number
+          : index + 1;
+
+      const body = (page.markdown ?? "").trim();
+
+      return `--- Halaman ${number} ---\n\n${body}`;
+    })
+    .join("\n\n");
+}
+
+function parseMarkdown(result: unknown): string {
   const value = result as {
-    markdown?: string;
-    pages?: Array<{
-      markdown?: string;
-    }>;
+    markdown?: string | MarkdownPages;
+    pages?: ParsedPage[];
     result?: {
-      markdown?: string;
-      pages?: Array<{
-        markdown?: string;
-      }>;
+      markdown?: string | MarkdownPages;
+      pages?: ParsedPage[];
     };
   };
 
-  if (typeof value.markdown === "string") {
-    return value.markdown;
-  }
+  const nested = value.result;
 
-  if (Array.isArray(value.pages)) {
-    return value.pages
-      .map((page) => page.markdown ?? "")
-      .join("\n");
-  }
+  const candidates: Array<
+    string | MarkdownPages | ParsedPage[] | undefined
+  > = [
+    value.markdown,
+    value.pages,
+    nested?.markdown,
+    nested?.pages,
+  ];
 
-  if (
-    value.result &&
-    typeof value.result.markdown === "string"
-  ) {
-    return value.result.markdown;
-  }
+  for (const candidate of candidates) {
+    if (typeof candidate === "string") {
+      return candidate;
+    }
 
-  if (
-    value.result &&
-    Array.isArray(value.result.pages)
-  ) {
-    return value.result.pages
-      .map((page) => page.markdown ?? "")
-      .join("\n");
+    if (
+      candidate &&
+      typeof candidate === "object" &&
+      "pages" in candidate &&
+      Array.isArray(candidate.pages)
+    ) {
+      const joined = joinPages(candidate.pages);
+      if (joined) {
+        return joined;
+      }
+    }
+
+    if (Array.isArray(candidate)) {
+      const joined = joinPages(candidate);
+      if (joined) {
+        return joined;
+      }
+    }
   }
 
   throw new Error(

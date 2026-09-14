@@ -1,12 +1,12 @@
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 
-const INPUT_PATH = path.resolve(
-  "data/extracted/uu27-2022.md",
-);
+import { config } from "../utils/config.js";
+import { readSources } from "../utils/manifest.js";
 
-const OUTPUT_PATH = path.resolve(
-  "data/normalized/uu27-2022.normalized.md",
+const PARSED_DIR = path.resolve(config.data.parsed);
+const NORMALIZED_DIR = path.resolve(
+  config.data.normalized,
 );
 
 function normalize(text: string): string {
@@ -37,26 +37,18 @@ function normalize(text: string): string {
     }
 
     // 4. Remove signature artifact
-    if (
-      /^\[signature:/i.test(line)
-    ) {
+    if (/^\[signature:/i.test(line)) {
       continue;
     }
 
-    // 5. Remove standalone page-number artifacts
-    //    Example: "- 12 -"
-    if (
-      /^-\s*\d+\s*-$/.test(line)
-    ) {
+    // 5. Remove standalone page-number artifacts ("- 12 -")
+    if (/^-\s*\d+\s*-$/.test(line)) {
       continue;
     }
 
     // 6. Remove split running header:
     //    PRESIDEN
     //    REPUBLIK INDONESIA
-    //
-    //    Hanya dianggap running header jika
-    //    kedua baris berdampingan.
     if (
       /^PRESIDEN$/i.test(line) &&
       i + 1 < lines.length &&
@@ -64,8 +56,6 @@ function normalize(text: string): string {
         lines[i + 1].trim(),
       )
     ) {
-      // Pertahankan pasangan pertama jika belum
-      // pernah menemukan header substantif.
       if (!seenSubstantivePresiden) {
         output.push("PRESIDEN");
         output.push("REPUBLIK INDONESIA");
@@ -77,34 +67,29 @@ function normalize(text: string): string {
       continue;
     }
 
-    // 7. Running header:
+    // 7. Running header (dengan/tanpa prefix heading):
     //    PRESIDEN REPUBLIK INDONESIA
-    //
-    //    Pertahankan kemunculan substantif pertama.
-    //    Kemunculan berikutnya dianggap running header.
+    //    ## PRESIDEN REPUBLIK INDONESIA
     if (
-      /^PRESIDEN REPUBLIK INDONESIA$/i.test(line)
+      /^#{0,6}\s*PRESIDEN REPUBLIK INDONESIA$/i.test(
+        line,
+      )
     ) {
       if (!seenSubstantivePresiden) {
-        output.push(line);
+        output.push(original);
         seenSubstantivePresiden = true;
       }
 
       continue;
     }
 
-    // 8. Remove blockquote artifact.
-    //    Hanya marker ">"-nya, bukan isi hukumnya.
+    // 8. Remove blockquote marker (bukan isinya)
     if (line.startsWith(">")) {
-      output.push(
-        line.replace(/^>\s?/, ""),
-      );
+      output.push(line.replace(/^>\s?/, ""));
       continue;
     }
 
-    // 9. Remove bullet artifact "* a."
-    //
-    //    Hanya marker layout, bukan isi setelahnya.
+    // 9. Normalize bullet artifact "* a." -> "a."
     const bulletMatch = line.match(
       /^\*\s+([a-z])\.\s*(.*)$/i,
     );
@@ -116,36 +101,33 @@ function normalize(text: string): string {
       continue;
     }
 
-    // 10. Conservative continuation marker.
-    //
-    // Jangan menghapus ". . ." secara global.
-    // Hanya tangani jika baris berikutnya merupakan
-    // continuation dari teks yang sama.
-    if (
-      endsWithContinuationMarker(line) &&
-      i + 1 < lines.length
-    ) {
-      const nextLine = lines[i + 1].trim();
+    // 10. Continuation marker ". . ."
+    if (endsWithContinuationMarker(line)) {
+      const truncated = removeContinuationMarker(line);
+      const next = findNextContentLine(lines, i + 1);
 
-      if (
-        nextLine !== "" &&
-        looksLikeContinuation(
-          line,
-          nextLine,
-        )
-      ) {
-        output.push(
-          removeContinuationMarker(line),
-        );
-        continue;
+      if (next !== null) {
+        const t = truncated.toLowerCase();
+        const n = next.toLowerCase();
+
+        // Jika baris lanjutan mengulang awal yang sama,
+        // fragmen terpotong ini adalah artefak page break → buang.
+        if (t.length > 0 && n.startsWith(t)) {
+          continue;
+        }
+
+        if (looksLikeContinuation(line, next)) {
+          output.push(truncated);
+          continue;
+        }
       }
     }
 
-    // 11. Preserve everything else exactly.
+    // 11. Preserve everything else
     output.push(original);
   }
 
-  // 12. Collapse excessive blank lines.
+  // 12. Collapse excessive blank lines
   const collapsed: string[] = [];
 
   let previousBlank = false;
@@ -171,6 +153,33 @@ function endsWithContinuationMarker(
   return /\s\.\s\.\s\.\s*$/.test(line);
 }
 
+function isPageMarkerLine(line: string): boolean {
+  return /^---\s*Halaman\s+\d+\s*---$/i.test(
+    line.trim(),
+  );
+}
+
+/**
+ * Mencari baris konten berikutnya, melewati baris kosong
+ * dan penanda halaman.
+ */
+function findNextContentLine(
+  lines: string[],
+  start: number,
+): string | null {
+  for (let j = start; j < lines.length; j++) {
+    const candidate = lines[j].trim();
+
+    if (candidate === "" || isPageMarkerLine(candidate)) {
+      continue;
+    }
+
+    return candidate;
+  }
+
+  return null;
+}
+
 function removeContinuationMarker(
   line: string,
 ): string {
@@ -183,16 +192,8 @@ function looksLikeContinuation(
   current: string,
   next: string,
 ): boolean {
-  // Continuation layout pada dokumen ini biasanya
-  // terjadi ketika teks terpotong di akhir halaman.
-  //
-  // Kita tidak mencoba memperbaiki OCR atau
-  // menggabungkan kalimat secara agresif.
-
   if (
-    /^(BAB|Pasal|PENJELASAN|##|###|####)/i.test(
-      next,
-    )
+    /^(BAB|Pasal|PENJELASAN|##|###|####)/i.test(next)
   ) {
     return false;
   }
@@ -201,45 +202,59 @@ function looksLikeContinuation(
 }
 
 function main(): void {
-  if (!fs.existsSync(INPUT_PATH)) {
-    throw new Error(
-      `Input tidak ditemukan: ${INPUT_PATH}`,
+  const sources = readSources();
+
+  const enabled = sources.documents.filter(
+    (doc) => doc.enabled !== false,
+  );
+
+  fs.mkdirSync(NORMALIZED_DIR, {
+    recursive: true,
+  });
+
+  console.log(
+    `[normalize] ${enabled.length} dokumen aktif`,
+  );
+
+  let failures = 0;
+
+  for (const doc of enabled) {
+    const inputPath = path.join(
+      PARSED_DIR,
+      `${doc.document_id}.md`,
+    );
+
+    const outputPath = path.join(
+      NORMALIZED_DIR,
+      `${doc.document_id}.normalized.md`,
+    );
+
+    if (!fs.existsSync(inputPath)) {
+      console.error(
+        `[${doc.document_id}] input tidak ditemukan: ${inputPath}\n` +
+          '  → jalankan "npm run parse" lebih dulu.',
+      );
+
+      failures++;
+      continue;
+    }
+
+    const raw = fs.readFileSync(inputPath, "utf-8");
+    const normalized = normalize(raw);
+
+    fs.writeFileSync(outputPath, normalized, "utf-8");
+
+    console.log(
+      `[${doc.document_id}] ${normalized.length} karakter → ${outputPath}`,
     );
   }
 
-  fs.mkdirSync(
-    path.dirname(OUTPUT_PATH),
-    { recursive: true },
-  );
+  if (failures > 0) {
+    console.error(`\nGagal: ${failures} dokumen.`);
+    process.exit(1);
+  }
 
-  const raw = fs.readFileSync(
-    INPUT_PATH,
-    "utf-8",
-  );
-
-  const normalized = normalize(raw);
-
-  fs.writeFileSync(
-    OUTPUT_PATH,
-    normalized,
-    "utf-8",
-  );
-
-  console.log(
-    `Input : ${INPUT_PATH}`,
-  );
-
-  console.log(
-    `Output: ${OUTPUT_PATH}`,
-  );
-
-  console.log(
-    `Panjang hasil: ${normalized.length} karakter`,
-  );
-
-  console.log(
-    "STEP 6 : PASS",
-  );
+  console.log("\nSTEP 3 (normalize) : PASS");
 }
 
 main();

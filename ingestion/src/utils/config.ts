@@ -19,7 +19,7 @@ export const config = {
 
   data: {
     raw: "data/raw",
-    extracted: "data/extracted",
+    parsed: "data/parsed",
     normalized: "data/normalized",
     chunks: "data/chunks",
     lancedb: "data/lancedb",

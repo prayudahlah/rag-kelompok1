@@ -1051,7 +1051,7 @@ async function main(): Promise<void> {
   );
 
   console.log(
-    "PDF → Extraction → Cleaning → Chunking → Metadata"
+    "PDF → Parsing → Cleaning → Chunking → Metadata"
   );
 
   console.log(

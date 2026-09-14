@@ -11,9 +11,9 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "ingest": "tsx src/pipeline/07-ingest.ts",
-    "extract": "tsx src/pipeline/02-extract.ts",
     "normalize": "tsx src/pipeline/03-normalize.ts",
-    "fetch": "tsx src/pipeline/01-fetch.ts"
+    "fetch": "tsx src/pipeline/01-fetch.ts",
+    "parse": "tsx src/pipeline/02-parse.ts"
   },
   "keywords": [],
   "author": "",

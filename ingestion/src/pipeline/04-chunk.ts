@@ -1,85 +1,84 @@
-// src/chunk.ts
-// Structure-aware chunking for UU No. 27 Tahun 2022
-// Step 7 – Structure-Aware Chunking
+import fs from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 
-import type { Chunk } from "../utils/types.js";
+import { config } from "../utils/config.js";
+import { readSources } from "../utils/manifest.js";
 
-const DOCUMENT_ID = "uu-27-2022";
+import type { Chunk, Section } from "../utils/types.js";
 
-const DOCUMENT_TITLE =
-  "Undang-Undang Nomor 27 Tahun 2022 tentang Pelindungan Data Pribadi";
+const NORMALIZED_DIR = path.resolve(
+  config.data.normalized,
+);
+const CHUNKS_DIR = path.resolve(config.data.chunks);
 
-type Section =
-  | "pembukaan"
-  | "batang_tubuh"
-  | "pengesahan"
-  | "penjelasan";
+export interface DocumentMeta {
+  document_id: string;
+  document_title: string;
+}
+
+export interface ChunkResult {
+  chunks: Chunk[];
+  consumedLines: string[];
+}
+
+export interface ValidationReport {
+  valid: boolean;
+  totalChunks: number;
+  duplicates: number;
+  emptyText: number;
+  invalidIds: number;
+  missing: number;
+  extra: number;
+  missingSample: string[];
+  extraSample: string[];
+}
 
 /* =========================================================
  * DETECTION HELPERS
  * ========================================================= */
 
-/**
- * Deteksi marker halaman dari hasil LlamaParse.
- *
- * Contoh yang didukung:
- * --- Halaman 1 ---
- * --- Halaman 2 ---
- */
-function detectPage(
-  line: string,
-): number | null {
+function stripHeading(line: string): string {
+  return line.replace(/^#{1,6}\s+/, "").trim();
+}
+
+function detectPage(line: string): number | null {
   const match = line.match(
     /^---\s*Halaman\s+(\d+)\s*---$/i,
   );
 
-  return match
-    ? Number.parseInt(match[1], 10)
-    : null;
+  return match ? Number.parseInt(match[1], 10) : null;
 }
 
-/**
- * Deteksi BAB.
- *
- * Contoh:
- * BAB I
- * BAB II
- * BAB XVI
- */
 function detectBab(
-  line: string,
-): string | null {
-  const match = line.match(
-    /^BAB\s+([IVXLCDM]+)\s*$/i,
-  );
-
-  return match ? `BAB ${match[1]}` : null;
-}
-
-/**
- * Deteksi heading Pasal.
- *
- * Contoh:
- * Pasal 1
- * Pasal 16
- * Pasal 76
- */
-function detectPasal(
-  line: string,
-): {
-  pasal: string;
-  pasal_number: number;
-} | null {
-  const match = line.match(
-    /^Pasal\s+(\d+)\s*$/i,
+  text: string,
+): { bab: string; title: string | null } | null {
+  const match = text.match(
+    /^BAB\s+([IVXLCDM]+)\b\s*(.*)$/i,
   );
 
   if (!match) {
     return null;
   }
 
-  const pasalNumber =
-    Number.parseInt(match[1], 10);
+  const title = match[2]?.trim();
+
+  return {
+    bab: `BAB ${match[1].toUpperCase()}`,
+    title: title && title.length > 0 ? title : null,
+  };
+}
+
+function detectPasal(
+  text: string,
+): { pasal: string; pasal_number: number } | null {
+  const match = text.match(/^Pasal\s+(\d+)\s*$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const pasalNumber = Number.parseInt(match[1], 10);
 
   return {
     pasal: `Pasal ${pasalNumber}`,
@@ -87,987 +86,669 @@ function detectPasal(
   };
 }
 
-/**
- * Deteksi Bagian.
- *
- * Contoh:
- * Bagian Kesatu
- * Bagian Kedua
- * Bagian Ketiga
- */
-function detectBagian(
-  line: string,
-): string | null {
-  const match = line.match(
-    /^Bagian\s+(.+)$/i,
-  );
+function detectBagian(text: string): string | null {
+  const match = text.match(/^Bagian\s+(.+)$/i);
 
-  return match
-    ? `Bagian ${match[1].trim()}`
-    : null;
+  return match ? `Bagian ${match[1].trim()}` : null;
 }
 
-/**
- * Deteksi awal ayat.
- *
- * Contoh:
- * (1) Pemrosesan Data Pribadi...
- * (2) ...
- */
-function detectAyat(
-  line: string,
-): number | null {
-  const match = line.match(
-    /^\((\d+)\)\s+/,
-  );
+function detectAyat(line: string): number | null {
+  const match = line.match(/^\((\d+)\)\s+/);
 
-  return match
-    ? Number.parseInt(match[1], 10)
-    : null;
+  return match ? Number.parseInt(match[1], 10) : null;
 }
 
-/**
- * Deteksi huruf.
- *
- * Contoh:
- * a. pemerolehan dan pengumpulan;
- * b. pengolahan;
- *
- * Huruf TIDAK dibuat menjadi chunk.
- */
-function isHuruf(
-  line: string,
-): boolean {
-  return /^[a-z]\.\s+/i.test(line);
+function detectAngka(line: string): number | null {
+  const match = line.match(/^(\d+)\.\s+/);
+
+  return match ? Number.parseInt(match[1], 10) : null;
 }
 
-/**
- * Deteksi angka definisi khusus Pasal 1.
- *
- * Contoh:
- * 1. Data Pribadi adalah...
- * 2. Data Pribadi Spesifik adalah...
- *
- * Hanya digunakan ketika sedang berada
- * di Pasal 1 dan belum berada di dalam ayat.
- */
-function detectAngkaPasal1(
-  line: string,
-): number | null {
-  const match = line.match(
-    /^(\d+)\.\s+/,
-  );
-
-  if (!match) {
-    return null;
-  }
-
-  const number =
-    Number.parseInt(match[1], 10);
-
-  return number >= 1 && number <= 11
-    ? number
-    : null;
-}
-
-/**
- * Deteksi awal bagian penjelasan.
- */
-function isPenjelasan(
-  line: string,
-): boolean {
+function isPengesahanStart(line: string): boolean {
   return (
-    /^PENJELASAN$/i.test(line) ||
-    /^##\s+I\.\s*UMUM/i.test(line)
+    /Agar setiap orang mengetahuinya/i.test(line) ||
+    /^Diundangkan di\b/i.test(line) ||
+    /^Disahkan di\b/i.test(line)
   );
 }
 
-/**
- * Deteksi heading "PASAL DEMI PASAL".
- */
-function isPasalDemiPasal(
-  line: string,
-): boolean {
-  return /^##\s+II\.\s*PASAL DEMI PASAL/i.test(
-    line,
-  );
+function isPenjelasanStart(line: string): boolean {
+  return /^#*\s*PENJELASAN\b/i.test(line);
 }
 
-/**
- * Heading markdown tidak boleh menjadi text
- * chunk apabila hanya merupakan struktur.
- */
-function isMarkdownHeading(
-  line: string,
-): boolean {
-  return /^#{2,6}\s+/.test(line);
+function isUmumHeading(stripped: string): boolean {
+  return /^I\.\s*UMUM\b/i.test(stripped);
 }
 
-/**
- * Mengambil judul BAB dari baris setelah BAB.
- *
- * Contoh:
- *
- * BAB V
- * PEMROSESAN DATA PRIBADI
- */
-function cleanHeading(
-  line: string,
-): string {
-  return line
-    .replace(/^#{2,6}\s+/, "")
-    .trim();
+function isPasalDemiPasal(stripped: string): boolean {
+  return /^II\.\s*PASAL DEMI PASAL\b/i.test(stripped);
+}
+
+function isTambahanLembaran(line: string): boolean {
+  return /^TAMBAHAN LEMBARAN NEGARA\b/i.test(line);
 }
 
 /* =========================================================
- * CHUNK BUILDER
+ * CHUNKING
  * ========================================================= */
 
-interface ChunkContext {
-  section: Section;
-
-  bab: string | null;
-  bab_title: string | null;
-
-  bagian: string | null;
-
-  pasal: string | null;
-  pasal_number: number | null;
-
-  ayat: string | null;
-  ayat_number: number | null;
-
-  angka: number | null;
-
-  page_start: number | null;
-  page_end: number | null;
-}
-
-/**
- * Membuat ID chunk.
- */
-function makeChunkId(
-  context: ChunkContext,
-): string {
-  const section =
-    context.section;
-
-  if (section === "pembukaan") {
-    return `${DOCUMENT_ID}-pembukaan`;
-  }
-
-  if (section === "pengesahan") {
-    return `${DOCUMENT_ID}-pengesahan`;
-  }
-
-  if (section === "penjelasan") {
-    const pasal =
-      context.pasal_number;
-
-    if (pasal !== null) {
-      return `${DOCUMENT_ID}-penjelasan-pasal-${pasal}`;
-    }
-
-    return `${DOCUMENT_ID}-penjelasan`;
-  }
-
-  const pasal =
-    context.pasal_number;
-
-  if (pasal === null) {
-    return `${DOCUMENT_ID}-batang-tubuh`;
-  }
-
-  if (
-    context.angka !== null &&
-    pasal === 1
-  ) {
-    return `${DOCUMENT_ID}-batang-tubuh-pasal-1-angka-${context.angka}`;
-  }
-
-  if (
-    context.ayat_number !== null
-  ) {
-    return `${DOCUMENT_ID}-batang-tubuh-pasal-${pasal}-ayat-${context.ayat_number}`;
-  }
-
-  return `${DOCUMENT_ID}-batang-tubuh-pasal-${pasal}`;
-}
-
-/**
- * Membuat object Chunk.
- */
-function createChunk(
-  context: ChunkContext,
-  text: string,
-): Chunk {
-  if (
-    context.page_start === null ||
-    context.page_end === null
-  ) {
-    throw new Error(
-      `Chunk tanpa page provenance: ${context.pasal ?? context.section}`,
-    );
-  }
-
-  return {
-    chunk_id:
-      makeChunkId(context),
-
-    document_id:
-      DOCUMENT_ID,
-
-    document_title:
-      DOCUMENT_TITLE,
-
-    section:
-      context.section,
-
-    bab:
-      context.bab,
-
-    bab_title:
-      context.bab_title,
-
-    bagian:
-      context.bagian,
-
-    pasal:
-      context.pasal,
-
-    pasal_number:
-      context.pasal_number,
-
-    ayat:
-      context.ayat,
-
-    ayat_number:
-      context.ayat_number,
-
-    angka:
-      context.angka,
-
-    page_start:
-      context.page_start,
-
-    page_end:
-      context.page_end,
-
-    text:
-      text.trim(),
-  };
-}
-
-/* =========================================================
- * MAIN CHUNKING
- * ========================================================= */
-
-/**
- * Structure-aware chunking.
- *
- * Keputusan final Step 7:
- *
- * 1. Unit utama = Ayat.
- * 2. Jika Pasal tidak memiliki Ayat,
- *    fallback ke seluruh Pasal.
- * 3. Huruf tidak menjadi chunk terpisah.
- * 4. Pasal 1:
- *    angka 1–11 menjadi chunk terpisah,
- *    tetapi tetap metadata Pasal 1.
- * 5. Penjelasan dipisahkan dari batang tubuh.
- * 6. II. PASAL DEMI PASAL:
- *    satu chunk per Pasal.
- * 7. Page provenance dipertahankan.
- */
 export function chunkText(
   normalized: string,
-  pages: Map<number, number>,
-): Chunk[] {
-  const lines =
-    normalized.split("\n");
-
+  doc: DocumentMeta,
+): ChunkResult {
+  const lines = normalized.split(/\r?\n/);
   const chunks: Chunk[] = [];
+  const consumedLines: string[] = [];
+
+  const docId = doc.document_id;
 
   let currentPage = 1;
 
-  let section: Section =
-    "pembukaan";
+  let section: Section = "pembukaan";
 
   let bab: string | null = null;
   let babTitle: string | null = null;
-
   let bagian: string | null = null;
 
   let pasal: string | null = null;
   let pasalNumber: number | null = null;
 
-  let currentAyatNumber:
-    number | null = null;
-
+  let currentAyatNumber: number | null = null;
   let currentAngka: number | null = null;
 
   let currentText: string[] = [];
+  let chunkPageStart: number | null = null;
+  let chunkPageEnd: number | null = null;
 
-  let chunkPageStart:
-    number | null = null;
+  let batangTubuhStarted = false;
+  let pengesahanStarted = false;
+  let penjelasanMode = false;
+  let umumMode = false;
+  let umumStarted = false;
+  let pasalDemiPasal = false;
 
-  let chunkPageEnd:
-    number | null = null;
+  let umumIndex = 0;
+  let pendingTitle: "bab" | "bagian" | null = null;
 
-  let explanationMode = false;
-
-  /**
-   * Simpan current chunk.
-   */
-  const flushChunk = () => {
-    if (
-      currentText.length === 0
-    ) {
-      return;
-    }
-
-    const text =
-      currentText
-        .join("\n")
-        .trim();
-
-    if (!text) {
-      currentText = [];
-      return;
-    }
-
-    const context: ChunkContext =
-      {
-        section,
-
-        bab,
-
-        bab_title:
-          babTitle,
-
-        bagian,
-
-        pasal,
-
-        pasal_number:
-          pasalNumber,
-
-        ayat:
-          currentAyatNumber !== null
-            ? `(${currentAyatNumber})`
-            : null,
-
-        ayat_number:
-          currentAyatNumber,
-
-        angka:
-          currentAngka,
-
-        page_start:
-          chunkPageStart,
-
-        page_end:
-          chunkPageEnd,
-      };
-
-    chunks.push(
-      createChunk(
-        context,
-        text,
-      ),
-    );
-
-    currentText = [];
-    chunkPageStart = null;
-    chunkPageEnd = null;
-  };
-
-  /**
-   * Tambahkan text ke current chunk.
-   */
-  const addText = (
-    text: string,
-    page: number,
-  ) => {
-    const clean =
-      text.trim();
+  const addText = (text: string, page: number): void => {
+    const clean = text.trim();
 
     if (!clean) {
       return;
     }
 
-    if (
-      chunkPageStart === null
-    ) {
+    if (chunkPageStart === null) {
       chunkPageStart = page;
     }
 
     chunkPageEnd = page;
-
     currentText.push(clean);
   };
 
-  for (
-    let i = 0;
-    i < lines.length;
-    i++
-  ) {
-    const rawLine =
-      lines[i];
-
-    const line =
-      rawLine.trim();
-
-    if (!line) {
-      continue;
+  const makeChunkId = (): string => {
+    if (section === "pembukaan") {
+      return `${docId}:pembukaan`;
     }
 
-    /* -----------------------------------------
-     * PAGE
-     * ----------------------------------------- */
-
-    const detectedPage =
-      detectPage(line);
-
-    if (
-      detectedPage !== null
-    ) {
-      currentPage =
-        detectedPage;
-      continue;
+    if (section === "pengesahan") {
+      return `${docId}:pengesahan`;
     }
 
-    /*
-     * Jika mapping pages tersedia,
-     * gunakan mapping tersebut.
-     */
-    const mappedPage =
-      pages.get(i);
+    if (section === "penjelasan") {
+      if (pasalNumber !== null) {
+        return `${docId}:penjelasan:pasal-${pasalNumber}`;
+      }
 
-    if (
-      mappedPage !== undefined
-    ) {
-      currentPage =
-        mappedPage;
+      return `${docId}:penjelasan:penutup`;
     }
 
-    /* -----------------------------------------
-     * PENJELASAN
-     * ----------------------------------------- */
-
-    if (
-      /^PENJELASAN$/i.test(
-        line,
-      )
-    ) {
-      flushChunk();
-
-      section =
-        "penjelasan";
-
-      explanationMode = true;
-
-      bab = null;
-      babTitle = null;
-      bagian = null;
-      pasal = null;
-      pasalNumber = null;
-
-      currentAyatNumber =
-        null;
-
-      currentAngka = null;
-
-      continue;
+    if (pasalNumber === null) {
+      return `${docId}:batang-tubuh`;
     }
 
-    /*
-     * Dalam penjelasan, "II. PASAL DEMI PASAL"
-     * adalah struktur, bukan text chunk.
-     */
     if (
-      explanationMode &&
-      isPasalDemiPasal(line)
+      currentAngka !== null &&
+      pasalNumber === 1
     ) {
-      flushChunk();
-
-      section =
-        "penjelasan";
-
-      pasal = null;
-      pasalNumber = null;
-
-      currentAyatNumber =
-        null;
-
-      currentAngka = null;
-
-      continue;
+      return `${docId}:batang-tubuh:pasal-1:angka-${currentAngka}`;
     }
 
-    /* -----------------------------------------
-     * BAB
-     * ----------------------------------------- */
-
-    const detectedBab =
-      detectBab(
-        cleanHeading(line),
-      );
-
-    if (
-      detectedBab !== null
-    ) {
-      flushChunk();
-
-      section =
-        explanationMode
-          ? "penjelasan"
-          : "batang_tubuh";
-
-      bab =
-        detectedBab;
-
-      /*
-       * Judul BAB sering berada pada baris
-       * berikutnya dan dapat terpisah dari
-       * heading BAB.
-       *
-       * Judul akan ditangkap oleh logic
-       * continuation di bawah.
-       */
-
-      babTitle = null;
-
-      bagian = null;
-
-      pasal = null;
-      pasalNumber = null;
-
-      currentAyatNumber =
-        null;
-
-      currentAngka = null;
-
-      continue;
+    if (currentAyatNumber !== null) {
+      return `${docId}:batang-tubuh:pasal-${pasalNumber}:ayat-${currentAyatNumber}`;
     }
 
-    /* -----------------------------------------
-     * BAGIAN
-     * ----------------------------------------- */
+    return `${docId}:batang-tubuh:pasal-${pasalNumber}`;
+  };
 
-    const detectedBagian =
-      detectBagian(
-        cleanHeading(line),
-      );
-
-    if (
-      detectedBagian !== null
-    ) {
-      flushChunk();
-
-      bagian =
-        detectedBagian;
-
-      /*
-       * Judul Bagian dapat berada di baris
-       * berikutnya sebagai plain text.
-       *
-       * Tidak dimasukkan ke text chunk.
-       * Disimpan sebagai metadata.
-       */
-
-      continue;
+  const makeParentId = (): string | null => {
+    if (section !== "batang_tubuh") {
+      return null;
     }
 
-    /* -----------------------------------------
-     * PASAL
-     * ----------------------------------------- */
-
-    const pasalInfo =
-      detectPasal(
-        cleanHeading(line),
-      );
-
-    if (
-      pasalInfo !== null
-    ) {
-      flushChunk();
-
-      pasal =
-        pasalInfo.pasal;
-
-      pasalNumber =
-        pasalInfo.pasal_number;
-
-      currentAyatNumber =
-        null;
-
-      currentAngka = null;
-
-      /*
-       * Untuk penjelasan:
-       *
-       * satu Pasal = satu chunk.
-       *
-       * Untuk batang tubuh:
-       * chunk dibuat berdasarkan Ayat
-       * atau fallback seluruh Pasal.
-       */
-
-      continue;
+    if (pasalNumber === null) {
+      return null;
     }
 
-    /* -----------------------------------------
-     * JUDUL BAGIAN / BAB CONTINUATION
-     * ----------------------------------------- */
-
     if (
-      (bab !== null ||
-        bagian !== null) &&
-      pasal === null &&
-      /^[A-Z0-9][A-Z0-9\s.,'’"()\/:-]+$/.test(
-        cleanHeading(line),
-      )
+      currentAyatNumber !== null ||
+      currentAngka !== null
     ) {
-      const title =
-        cleanHeading(line);
+      return `${docId}:batang-tubuh:pasal-${pasalNumber}`;
+    }
 
-      if (
-        bagian !== null
-      ) {
-        bagian =
-          `${bagian}: ${title}`;
-      } else if (
-        bab !== null
-      ) {
-        babTitle =
-          title;
+    return null;
+  };
+
+  const flushChunk = (kind: "normal" | "umum"): void => {
+    if (currentText.length === 0) {
+      return;
+    }
+
+    const text = currentText.join("\n").trim();
+
+    currentText = [];
+
+    if (!text) {
+      return;
+    }
+
+    const pageStart = chunkPageStart ?? currentPage;
+    const pageEnd = chunkPageEnd ?? currentPage;
+
+    let chunkId: string;
+    let parentId: string | null;
+
+    if (kind === "umum") {
+      umumIndex += 1;
+      chunkId = `${docId}:penjelasan:umum:${umumIndex}`;
+      parentId = `${docId}:penjelasan:umum`;
+    } else {
+      chunkId = makeChunkId();
+      parentId = makeParentId();
+    }
+
+    chunks.push({
+      chunk_id: chunkId,
+      document_id: docId,
+      document_title: doc.document_title,
+      section,
+      bab,
+      bab_title: babTitle,
+      bagian,
+      pasal,
+      pasal_number: pasalNumber,
+      ayat:
+        currentAyatNumber !== null
+          ? `(${currentAyatNumber})`
+          : null,
+      ayat_number: currentAyatNumber,
+      angka: currentAngka,
+      page_start: pageStart,
+      page_end: pageEnd,
+      text,
+      parent_id: parentId,
+    });
+
+    chunkPageStart = null;
+    chunkPageEnd = null;
+  };
+
+  const resetPasalState = (): void => {
+    pasal = null;
+    pasalNumber = null;
+    currentAyatNumber = null;
+    currentAngka = null;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    if (line === "") {
+      if (penjelasanMode && umumMode) {
+        flushChunk("umum");
       }
 
       continue;
     }
 
-    /* -----------------------------------------
-     * PASAL 1 – ANGKA DEFINISI
-     * ----------------------------------------- */
+    const detectedPage = detectPage(line);
 
+    if (detectedPage !== null) {
+      currentPage = detectedPage;
+      consumedLines.push(line);
+      continue;
+    }
+
+    const stripped = stripHeading(line);
+
+    // ---- Penjelasan (transisi) ----
+    if (!penjelasanMode && isPenjelasanStart(line)) {
+      flushChunk("normal");
+      section = "penjelasan";
+      penjelasanMode = true;
+      umumMode = false;
+      umumStarted = false;
+      pasalDemiPasal = false;
+      bab = null;
+      babTitle = null;
+      bagian = null;
+      resetPasalState();
+      consumedLines.push(line);
+      continue;
+    }
+
+    if (penjelasanMode) {
+      if (isUmumHeading(stripped)) {
+        flushChunk(umumMode ? "umum" : "normal");
+        umumStarted = true;
+        umumMode = true;
+        pasalDemiPasal = false;
+        resetPasalState();
+        consumedLines.push(line);
+        continue;
+      }
+
+      if (isPasalDemiPasal(stripped)) {
+        flushChunk(umumMode ? "umum" : "normal");
+        umumMode = false;
+        pasalDemiPasal = true;
+        resetPasalState();
+        consumedLines.push(line);
+        continue;
+      }
+
+      if (isTambahanLembaran(line)) {
+        consumedLines.push(line);
+        continue;
+      }
+
+      const pasalInfo = detectPasal(stripped);
+
+      if (pasalInfo) {
+        if (pasalInfo.pasal_number === pasalNumber) {
+          consumedLines.push(line);
+          continue;
+        }
+
+        flushChunk(umumMode ? "umum" : "normal");
+        umumMode = false;
+        pasal = pasalInfo.pasal;
+        pasalNumber = pasalInfo.pasal_number;
+        currentAyatNumber = null;
+        currentAngka = null;
+        pendingTitle = null;
+        consumedLines.push(line);
+        continue;
+      }
+
+      // Blok judul penjelasan sebelum I. UMUM / PASAL DEMI PASAL
+      if (!umumStarted && !pasalDemiPasal) {
+        consumedLines.push(line);
+        continue;
+      }
+
+      if (umumMode) {
+        addText(line, currentPage);
+        continue;
+      }
+
+      addText(line, currentPage);
+      continue;
+    }
+
+    // ---- Batang tubuh / pembukaan / pengesahan ----
+    if (isTambahanLembaran(line)) {
+      consumedLines.push(line);
+      continue;
+    }
+
+    const babInfo = detectBab(stripped);
+
+    if (babInfo) {
+      flushChunk("normal");
+      section = "batang_tubuh";
+      batangTubuhStarted = true;
+      bab = babInfo.bab;
+      babTitle = babInfo.title;
+      bagian = null;
+      resetPasalState();
+      pendingTitle =
+        babInfo.title === null ? "bab" : null;
+      consumedLines.push(line);
+      continue;
+    }
+
+    const bagianInfo = detectBagian(stripped);
+
+    if (bagianInfo) {
+      flushChunk("normal");
+      bagian = bagianInfo;
+      resetPasalState();
+      pendingTitle = "bagian";
+      consumedLines.push(line);
+      continue;
+    }
+
+    const pasalInfo = detectPasal(stripped);
+
+    if (pasalInfo) {
+      if (pasalInfo.pasal_number === pasalNumber) {
+        consumedLines.push(line);
+        continue;
+      }
+
+      flushChunk("normal");
+
+      if (!batangTubuhStarted) {
+        section = "batang_tubuh";
+        batangTubuhStarted = true;
+      }
+
+      pasal = pasalInfo.pasal;
+      pasalNumber = pasalInfo.pasal_number;
+      currentAyatNumber = null;
+      currentAngka = null;
+      pendingTitle = null;
+      consumedLines.push(line);
+      continue;
+    }
+
+    // ---- Awal pengesahan ----
+    if (
+      batangTubuhStarted &&
+      section !== "pengesahan" &&
+      isPengesahanStart(line)
+    ) {
+      flushChunk("normal");
+      section = "pengesahan";
+      pengesahanStarted = true;
+      resetPasalState();
+      addText(line, currentPage);
+      continue;
+    }
+
+    // ---- Judul BAB / Bagian pada baris berikutnya ----
+    if (pendingTitle !== null) {
+      if (pendingTitle === "bab") {
+        babTitle = stripped;
+      } else {
+        bagian = bagian
+          ? `${bagian}: ${stripped}`
+          : stripped;
+      }
+
+      pendingTitle = null;
+      consumedLines.push(line);
+      continue;
+    }
+
+    // ---- Pasal 1: definisi per angka ----
     if (
       section === "batang_tubuh" &&
       pasalNumber === 1 &&
       currentAyatNumber === null
     ) {
-      const angka =
-        detectAngkaPasal1(line);
+      const angka = detectAngka(line);
 
-      if (
-        angka !== null
-      ) {
-        flushChunk();
+      if (angka !== null) {
+        if (angka === currentAngka) {
+          addText(line, currentPage);
+          continue;
+        }
 
-        currentAngka =
-          angka;
-
-        addText(
-          line,
-          currentPage,
-        );
-
+        flushChunk("normal");
+        currentAngka = angka;
+        addText(line, currentPage);
         continue;
       }
     }
 
-    /* -----------------------------------------
-     * AYAT
-     * ----------------------------------------- */
-
-    const ayatNumber =
-      detectAyat(line);
+    // ---- Ayat ----
+    const ayatNumber = detectAyat(line);
 
     if (
-      ayatNumber !== null
+      ayatNumber !== null &&
+      section === "batang_tubuh"
     ) {
-      /*
-       * Untuk penjelasan, ayat tidak
-       * menjadi chunk terpisah.
-       */
-      if (
-        section ===
-        "penjelasan"
-      ) {
-        addText(
-          line,
-          currentPage,
-        );
-
+      if (ayatNumber === currentAyatNumber) {
+        addText(line, currentPage);
         continue;
       }
 
-      /*
-       * Batang tubuh:
-       * setiap ayat menjadi chunk.
-       */
-      flushChunk();
-
-      currentAngka =
-        null;
-
-      currentAyatNumber =
-        ayatNumber;
-
-      addText(
-        line,
-        currentPage,
-      );
-
+      flushChunk("normal");
+      currentAngka = null;
+      currentAyatNumber = ayatNumber;
+      addText(line, currentPage);
       continue;
     }
 
-    /* -----------------------------------------
-     * HURUF
-     * ----------------------------------------- */
+    addText(line, currentPage);
+  }
 
-    if (
-      isHuruf(line)
-    ) {
-      /*
-       * Huruf TIDAK menjadi chunk baru.
-       *
-       * Contoh:
-       * a. ...
-       * b. ...
-       * c. ...
-       *
-       * semuanya tetap berada dalam
-       * chunk Ayat yang sama.
-       */
-      addText(
-        line,
-        currentPage,
-      );
+  flushChunk(
+    penjelasanMode && umumMode ? "umum" : "normal",
+  );
 
-      continue;
-    }
-
-    /* -----------------------------------------
-     * CONTENT
-     * ----------------------------------------- */
-
-    /*
-     * Pembukaan/pengesahan/penjelasan:
-     * konten ditambahkan sesuai konteks.
-     */
-    addText(
-      line,
-      currentPage,
+  if (!pengesahanStarted) {
+    console.warn(
+      `  [warning] penanda pengesahan tidak ditemukan pada ${docId}`,
     );
   }
 
-  flushChunk();
-
-  /*
-   * Setelah parsing selesai, tandai section
-   * pembukaan/pengesahan berdasarkan posisi
-   * tidak diperlakukan sebagai Pasal.
-   *
-   * Untuk MVP frozen dataset, pembukaan dan
-   * pengesahan masing-masing hanya satu chunk.
-   */
-
-  return chunks;
-}
-
-/* =========================================================
- * FALLBACK
- * ========================================================= */
-
-/**
- * Fallback apabila suatu Pasal tidak mempunyai Ayat.
- *
- * Seluruh isi Pasal menjadi satu chunk.
- */
-export function fallbackToPasal(
-  pasalNumber: number,
-  text: string,
-  pageStart: number,
-  pageEnd: number,
-  bab: string | null = null,
-  babTitle: string | null = null,
-  bagian: string | null = null,
-): Chunk {
-  return {
-    chunk_id:
-      `${DOCUMENT_ID}-batang-tubuh-pasal-${pasalNumber}`,
-
-    document_id:
-      DOCUMENT_ID,
-
-    document_title:
-      DOCUMENT_TITLE,
-
-    section:
-      "batang_tubuh",
-
-    bab,
-
-    bab_title:
-      babTitle,
-
-    bagian,
-
-    pasal:
-      `Pasal ${pasalNumber}`,
-
-    pasal_number:
-      pasalNumber,
-
-    ayat:
-      null,
-
-    ayat_number:
-      null,
-
-    angka:
-      null,
-
-    page_start:
-      pageStart,
-
-    page_end:
-      pageEnd,
-
-    text:
-      text.trim(),
-  };
+  return { chunks, consumedLines };
 }
 
 /* =========================================================
  * VALIDATION
  * ========================================================= */
 
-/**
- * Normalisasi whitespace untuk kebutuhan
- * validasi multiset.
- *
- * Ini TIDAK mengubah text yang disimpan.
- */
-function normalizeForValidation(
-  text: string,
-): string {
-  return text
-    .replace(/\s+/g, " ")
-    .trim();
+function normalizeLine(line: string): string {
+  return line.replace(/\s+/g, " ").trim();
 }
 
-/**
- * Validasi no-text-loss.
- *
- * Prinsip:
- *
- * Semua substantive text yang masuk ke chunk
- * harus dapat ditemukan kembali.
- *
- * Metadata / structural heading tidak dihitung
- * sebagai kehilangan text karena memang sengaja
- * dipindahkan menjadi metadata.
- */
+function countMap(
+  lines: string[],
+): Map<string, number> {
+  const map = new Map<string, number>();
+
+  for (const line of lines) {
+    map.set(line, (map.get(line) ?? 0) + 1);
+  }
+
+  return map;
+}
+
 export function validateChunks(
   inputText: string,
   chunks: Chunk[],
-): {
-  valid: boolean;
-  missingTextLines: string[];
-  extraTextLines: string[];
-} {
-  const inputLines =
-    inputText
-      .split("\n")
-      .map(normalizeForValidation)
-      .filter(Boolean);
+  consumedLines: string[],
+): ValidationReport {
+  const input = inputText
+    .split(/\r?\n/)
+    .map(normalizeLine)
+    .filter(Boolean);
 
-  const outputLines =
-    chunks
-      .flatMap((chunk) =>
-        chunk.text.split("\n"),
-      )
-      .map(normalizeForValidation)
-      .filter(Boolean);
+  const covered = [
+    ...chunks.flatMap((chunk) =>
+      chunk.text.split(/\r?\n/),
+    ),
+    ...consumedLines,
+  ]
+    .map(normalizeLine)
+    .filter(Boolean);
 
-  const inputCounts =
-    new Map<string, number>();
+  const inputCounts = countMap(input);
+  const coveredCounts = countMap(covered);
 
-  const outputCounts =
-    new Map<string, number>();
+  const missingSample: string[] = [];
+  const extraSample: string[] = [];
 
-  for (const line of inputLines) {
-    inputCounts.set(
-      line,
-      (inputCounts.get(line) ?? 0) +
-        1,
-    );
-  }
+  let missing = 0;
+  let extra = 0;
 
-  for (const line of outputLines) {
-    outputCounts.set(
-      line,
-      (outputCounts.get(line) ?? 0) +
-        1,
-    );
-  }
+  for (const [line, count] of inputCounts) {
+    const got = coveredCounts.get(line) ?? 0;
 
-  const missingTextLines: string[] =
-    [];
-
-  const extraTextLines: string[] =
-    [];
-
-  for (
-    const [line, count] of inputCounts
-  ) {
-    const outputCount =
-      outputCounts.get(line) ?? 0;
-
-    if (
-      outputCount < count
-    ) {
-      for (
-        let i = outputCount;
-        i < count;
-        i++
-      ) {
-        missingTextLines.push(
-          line,
-        );
+    if (got < count) {
+      missing += count - got;
+      if (missingSample.length < 10) {
+        missingSample.push(line);
       }
     }
   }
 
-  for (
-    const [line, count] of outputCounts
-  ) {
-    const inputCount =
-      inputCounts.get(line) ?? 0;
+  for (const [line, count] of coveredCounts) {
+    const want = inputCounts.get(line) ?? 0;
 
-    if (
-      inputCount < count
-    ) {
-      for (
-        let i = inputCount;
-        i < count;
-        i++
-      ) {
-        extraTextLines.push(
-          line,
-        );
+    if (want < count) {
+      extra += count - want;
+      if (extraSample.length < 10) {
+        extraSample.push(line);
       }
     }
   }
+
+  const ids = chunks.map((chunk) => chunk.chunk_id);
+
+  const duplicates = ids.length - new Set(ids).size;
+
+  const emptyText = chunks.filter(
+    (chunk) => chunk.text.trim() === "",
+  ).length;
+
+  const invalidIds = ids.filter(
+    (id) => !/^[^:\s]+(:[^:\s]+)+$/.test(id),
+  ).length;
 
   return {
     valid:
-      missingTextLines.length === 0 &&
-      extraTextLines.length === 0,
-
-    missingTextLines,
-    extraTextLines,
+      missing === 0 &&
+      extra === 0 &&
+      duplicates === 0 &&
+      emptyText === 0 &&
+      invalidIds === 0,
+    totalChunks: chunks.length,
+    duplicates,
+    emptyText,
+    invalidIds,
+    missing,
+    extra,
+    missingSample,
+    extraSample,
   };
+}
+
+/* =========================================================
+ * RUNNER
+ * ========================================================= */
+
+function main(): void {
+  const sources = readSources();
+
+  const enabled = sources.documents.filter(
+    (doc) => doc.enabled !== false,
+  );
+
+  fs.mkdirSync(CHUNKS_DIR, { recursive: true });
+
+  console.log(
+    `[chunk] ${enabled.length} dokumen aktif`,
+  );
+
+  let failures = 0;
+
+  for (const doc of enabled) {
+    const inputPath = path.join(
+      NORMALIZED_DIR,
+      `${doc.document_id}.normalized.md`,
+    );
+
+    if (!fs.existsSync(inputPath)) {
+      console.error(
+        `[${doc.document_id}] input tidak ditemukan: ${inputPath}\n` +
+          '  → jalankan "npm run normalize" lebih dulu.',
+      );
+
+      failures++;
+      continue;
+    }
+
+    const normalized = fs.readFileSync(
+      inputPath,
+      "utf-8",
+    );
+
+    const { chunks, consumedLines } = chunkText(
+      normalized,
+      {
+        document_id: doc.document_id,
+        document_title: doc.doc_title,
+      },
+    );
+
+    const report = validateChunks(
+      normalized,
+      chunks,
+      consumedLines,
+    );
+
+    const bySection: Record<string, number> = {};
+
+    for (const chunk of chunks) {
+      bySection[chunk.section] =
+        (bySection[chunk.section] ?? 0) + 1;
+    }
+
+    console.log(
+      `[${doc.document_id}] total=${chunks.length} sections=${JSON.stringify(bySection)}`,
+    );
+
+    console.log(
+      `  duplicates=${report.duplicates} empty=${report.emptyText} invalidIds=${report.invalidIds} missing=${report.missing} extra=${report.extra}`,
+    );
+
+    if (!report.valid) {
+      console.error("  VALIDASI GAGAL");
+
+      for (const line of report.missingSample) {
+        console.error(`  missing: ${line}`);
+      }
+
+      for (const line of report.extraSample) {
+        console.error(`  extra: ${line}`);
+      }
+
+      failures++;
+      continue;
+    }
+
+    const outputPath = path.join(
+      CHUNKS_DIR,
+      `${doc.document_id}.chunks.json`,
+    );
+
+    fs.writeFileSync(
+      outputPath,
+      JSON.stringify(chunks, null, 2),
+      "utf-8",
+    );
+
+    console.log(`  → ${outputPath}`);
+  }
+
+  if (failures > 0) {
+    console.error(`\nGagal: ${failures} dokumen.`);
+    process.exit(1);
+  }
+
+  console.log("\nSTEP 4 (chunk) : PASS");
+}
+
+const entry = process.argv[1];
+
+if (
+  entry &&
+  import.meta.url === pathToFileURL(entry).href
+) {
+  main();
 }
