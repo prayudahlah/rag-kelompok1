@@ -2,7 +2,12 @@
 node_modules/
 dist/
 
+# Generated pipeline artifacts - jangan di-commit
 data/raw/
+data/parsed/
+data/normalized/
+data/chunks/
 data/lancedb/
+corpus/manifest.json
 
 *.log
