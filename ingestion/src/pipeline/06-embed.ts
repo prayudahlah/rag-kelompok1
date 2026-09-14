@@ -1,31 +1,50 @@
 import "dotenv/config";
 
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 
-import type { Chunk } from "../utils/types.js";
+import { config } from "../utils/config.js";
+import {
+  loadManifest,
+  readSources,
+  saveManifest,
+  sha256File,
+} from "../utils/manifest.js";
 import {
   createEmbedder,
-  MODEL,
   DIMENSION,
+  MODEL,
 } from "../utils/embedder.js";
 
-const INPUT_PATH = path.resolve(
-  "data/chunks/uu27-2022.enriched.json",
-);
+import type { Chunk, ManifestEntry } from "../utils/types.js";
 
-const OUTPUT_PATH = path.resolve(
-  "data/chunks/uu27-2022.embedded.json",
-);
+const CHUNKS_DIR = path.resolve(config.data.chunks);
 
 const BATCH_SIZE = 100;
-const BATCH_DELAY_MS = 61_000;
+const MIN_CALL_INTERVAL_MS = 65_000;
+const TASK_TYPE = "RETRIEVAL_DOCUMENT";
+
+let lastCallAt = 0;
+
+async function waitForRateLimit(): Promise<void> {
+  const elapsed = Date.now() - lastCallAt;
+  const waitMs = MIN_CALL_INTERVAL_MS - elapsed;
+
+  if (waitMs > 0) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, waitMs),
+    );
+  }
+}
 
 interface EnrichedChunk extends Chunk {
   source: string;
   document_type: string;
+  doc_number: number;
+  doc_year: number;
   corpus_version: string;
   content_type: string;
+  context_header: string;
 }
 
 interface EmbeddedChunk extends EnrichedChunk {
@@ -49,138 +68,69 @@ const HIERARCHY_KEYS = [
 const META_KEYS = [
   "source",
   "document_type",
+  "doc_number",
+  "doc_year",
   "corpus_version",
   "content_type",
 ] as const;
 
-async function main(): Promise<void> {
-  if (!fs.existsSync(INPUT_PATH)) {
-    console.error(
-      `Input tidak ditemukan: ${INPUT_PATH}`,
-    );
-
-    process.exit(1);
-  }
-
-  const chunks = JSON.parse(
-    fs.readFileSync(INPUT_PATH, "utf-8"),
-  ) as EnrichedChunk[];
-
-  const duplicateIds =
-    chunks.length -
-    new Set(
-      chunks.map((chunk) => chunk.chunk_id),
-    ).size;
-
-  const emptyText = chunks.filter(
-    (chunk) => chunk.text.trim() === "",
-  ).length;
-
-  if (duplicateIds !== 0) {
-    console.error(
-      `Input invalid: duplicate chunk_id = ${duplicateIds}`,
-    );
-
-    process.exit(1);
-  }
-
-  if (emptyText !== 0) {
-    console.error(
-      `Input invalid: empty text = ${emptyText}`,
-    );
-
-    process.exit(1);
-  }
-
-  console.log(`Input : ${chunks.length} chunks`);
-
-  const embedder = createEmbedder();
+async function embedChunks(
+  chunks: EnrichedChunk[],
+  docId: string,
+): Promise<number[][]> {
+  const embedder = createEmbedder({
+    taskType: TASK_TYPE,
+  });
 
   const total = chunks.length;
   const embeddings: number[][] = [];
+  const batches = Math.ceil(total / BATCH_SIZE);
 
-  const batches = Math.ceil(
-    total / BATCH_SIZE,
-  );
-
-  for (
-    let i = 0;
-    i < total;
-    i += BATCH_SIZE
-  ) {
+  for (let i = 0; i < total; i += BATCH_SIZE) {
     const batch = chunks
       .slice(i, i + BATCH_SIZE)
-      .map((chunk) => chunk.text);
-
-    const batchNumber =
-      Math.floor(i / BATCH_SIZE) + 1;
-
-    console.log(
-      `Batch ${batchNumber}/${batches} (${batch.length} chunk)...`,
-    );
-
-    const batchEmbeddings =
-      await embedder.embed(batch);
-
-    embeddings.push(...batchEmbeddings);
-
-    console.log(
-      `  selesai ${embeddings.length}/${total}`,
-    );
-
-    if (i + BATCH_SIZE < total) {
-      console.log(
-        `  menunggu ${
-          BATCH_DELAY_MS / 1000
-        } detik sebelum batch berikutnya...`,
+      .map((chunk) =>
+        chunk.context_header
+          ? `${chunk.context_header}\n\n${chunk.text}`
+          : chunk.text,
       );
 
-      await new Promise((resolve) =>
-        setTimeout(resolve, BATCH_DELAY_MS),
-      );
-    }
+    const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+
+    console.log(
+      `  batch ${batchNumber}/${batches} (${batch.length} chunk)...`,
+    );
+
+    await waitForRateLimit();
+
+    const result = await embedder.embed(batch);
+
+    lastCallAt = Date.now();
+
+    embeddings.push(...result);
+
+    console.log(
+      `    selesai ${embeddings.length}/${total}`,
+    );
   }
 
   if (embeddings.length !== total) {
-    console.error(
-      `Embedding tidak lengkap: ${embeddings.length}/${total}`,
+    throw new Error(
+      `[${docId}] embedding tidak lengkap: ${embeddings.length}/${total}`,
     );
-
-    process.exit(1);
   }
 
-  const output: EmbeddedChunk[] =
-    chunks.map((chunk, index) => ({
-      ...chunk,
-      embedding: embeddings[index],
-      embedding_model: MODEL,
-      embedding_dimension: DIMENSION,
-    }));
-
-  validate(output, chunks);
-
-  fs.writeFileSync(
-    OUTPUT_PATH,
-    JSON.stringify(output, null, 2),
-    "utf-8",
-  );
-
-  console.log("");
-  console.log(`Output : ${OUTPUT_PATH}`);
-  console.log(`Total  : ${output.length} record`);
-  console.log(`STEP 9 : PASS`);
+  return embeddings;
 }
 
 function validate(
   output: EmbeddedChunk[],
   input: EnrichedChunk[],
-): void {
+): { valid: boolean; summary: string } {
   let missing = 0;
-  let empty = 0;
   let badDimension = 0;
   let badNumber = 0;
   let modelBad = 0;
-  let dimensionMetadataBad = 0;
 
   for (const chunk of output) {
     if (!chunk.embedding) {
@@ -188,164 +138,201 @@ function validate(
       continue;
     }
 
-    if (chunk.embedding.length === 0) {
-      empty++;
-    }
-
-    if (
-      chunk.embedding.length !== DIMENSION
-    ) {
+    if (chunk.embedding.length !== DIMENSION) {
       badDimension++;
     }
 
     for (const value of chunk.embedding) {
-      if (
-        typeof value !== "number" ||
-        !Number.isFinite(value)
-      ) {
+      if (!Number.isFinite(value)) {
         badNumber++;
         break;
       }
     }
 
-    if (
-      chunk.embedding_model !== MODEL
-    ) {
+    if (chunk.embedding_model !== MODEL) {
       modelBad++;
     }
 
-    if (
-      chunk.embedding_dimension !== DIMENSION
-    ) {
-      dimensionMetadataBad++;
+    if (chunk.embedding_dimension !== DIMENSION) {
+      modelBad++;
     }
   }
 
-  let idDiff = 0;
-  let textDiff = 0;
-  let hierarchyDiff = 0;
+  let identityDiff = 0;
   let metadataDiff = 0;
-  let pageDiff = 0;
 
-  for (
-    let i = 0;
-    i < input.length;
-    i++
-  ) {
+  for (let i = 0; i < input.length; i++) {
     const before = input[i];
     const after = output[i];
 
-    if (
-      after.chunk_id !== before.chunk_id
-    ) {
-      idDiff++;
-    }
-
-    if (after.text !== before.text) {
-      textDiff++;
-    }
+    if (after.chunk_id !== before.chunk_id) identityDiff++;
+    if (after.text !== before.text) identityDiff++;
 
     for (const key of HIERARCHY_KEYS) {
-      if (after[key] !== before[key]) {
-        hierarchyDiff++;
-      }
+      if (after[key] !== before[key]) identityDiff++;
     }
 
     for (const key of META_KEYS) {
-      if (after[key] !== before[key]) {
-        metadataDiff++;
-      }
+      if (after[key] !== before[key]) metadataDiff++;
     }
 
     if (
-      after.page_start !==
-        before.page_start ||
-      after.page_end !==
-        before.page_end
+      after.page_start !== before.page_start ||
+      after.page_end !== before.page_end
     ) {
-      pageDiff++;
+      identityDiff++;
     }
   }
 
-  const duplicateIds =
+  const duplicates =
     output.length -
-    new Set(
-      output.map(
-        (chunk) => chunk.chunk_id,
-      ),
-    ).size;
+    new Set(output.map((c) => c.chunk_id)).size;
 
-  console.log("");
-  console.log(
-    "=== VALIDASI STEP 9 ===",
-  );
-
-  console.log(
-    `records             : ${output.length}`,
-  );
-
-  console.log(
-    `missing embedding   : ${missing}`,
-  );
-
-  console.log(
-    `empty embedding     : ${empty}`,
-  );
-
-  console.log(
-    `bad dimension       : ${badDimension}`,
-  );
-
-  console.log(
-    `bad number/NaN/Inf  : ${badNumber}`,
-  );
-
-  console.log(
-    `model konsisten     : ${
-      modelBad === 0
-        ? "PASS"
-        : "FAIL"
-    }`,
-  );
-
-  console.log(
-    `dim metadata        : ${
-      dimensionMetadataBad === 0
-        ? "PASS"
-        : "FAIL"
-    }`,
-  );
-
-  console.log(
-    `duplicate id        : ${duplicateIds}`,
-  );
-
-  console.log(
-    `identity diff       : id=${idDiff} text=${textDiff} hierarchy=${hierarchyDiff} metadata=${metadataDiff} page=${pageDiff}`,
-  );
-
-  const allPass =
+  const valid =
     output.length === input.length &&
     missing === 0 &&
-    empty === 0 &&
     badDimension === 0 &&
     badNumber === 0 &&
     modelBad === 0 &&
-    dimensionMetadataBad === 0 &&
-    duplicateIds === 0 &&
-    idDiff === 0 &&
-    textDiff === 0 &&
-    hierarchyDiff === 0 &&
+    identityDiff === 0 &&
     metadataDiff === 0 &&
-    pageDiff === 0;
+    duplicates === 0;
 
-  if (!allPass) {
-    console.error(
-      "STEP 9 : FAIL",
+  return {
+    valid,
+    summary:
+      `missing=${missing} badDim=${badDimension} badNum=${badNumber} ` +
+      `modelBad=${modelBad} identityDiff=${identityDiff} metadataDiff=${metadataDiff} duplicates=${duplicates}`,
+  };
+}
+
+function baseEntry(docId: string): ManifestEntry {
+  return {
+    document_id: docId,
+    source_url: "",
+    status: "missing",
+    retrieved_at: null,
+    bytes: null,
+    sha256: null,
+  };
+}
+
+async function main(): Promise<void> {
+  const sources = readSources();
+  const manifest = loadManifest(sources.corpus_version);
+
+  const enabled = sources.documents.filter(
+    (doc) => doc.enabled !== false,
+  );
+
+  fs.mkdirSync(CHUNKS_DIR, { recursive: true });
+
+  console.log(
+    `[embed] ${enabled.length} dokumen aktif (taskType=${TASK_TYPE})`,
+  );
+
+  let failures = 0;
+
+  for (const doc of enabled) {
+    const inputPath = path.join(
+      CHUNKS_DIR,
+      `${doc.document_id}.enriched.json`,
     );
 
+    const outputPath = path.join(
+      CHUNKS_DIR,
+      `${doc.document_id}.embedded.json`,
+    );
+
+    if (!fs.existsSync(inputPath)) {
+      console.error(
+        `[${doc.document_id}] input tidak ditemukan: ${inputPath}\n` +
+          '  → jalankan "npm run enrich" lebih dulu.',
+      );
+
+      failures++;
+      continue;
+    }
+
+    const inputSha = await sha256File(inputPath);
+
+    const signature = `${inputSha}:${MODEL}:${DIMENSION}:${TASK_TYPE}`;
+
+    const entry =
+      manifest.documents[doc.document_id] ?? baseEntry(doc.document_id);
+
+    if (
+      fs.existsSync(outputPath) &&
+      entry.embedded_signature === signature
+    ) {
+      console.log(
+        `[${doc.document_id}] skip: embedding sudah ada & signature cocok`,
+      );
+      continue;
+    }
+
+    const chunks = JSON.parse(
+      fs.readFileSync(inputPath, "utf-8"),
+    ) as EnrichedChunk[];
+
+    console.log(
+      `[${doc.document_id}] embed ${chunks.length} chunk`,
+    );
+
+    try {
+      const embeddings = await embedChunks(
+        chunks,
+        doc.document_id,
+      );
+
+      const output: EmbeddedChunk[] = chunks.map(
+        (chunk, index) => ({
+          ...chunk,
+          embedding: embeddings[index],
+          embedding_model: MODEL,
+          embedding_dimension: DIMENSION,
+        }),
+      );
+
+      const report = validate(output, chunks);
+
+      if (!report.valid) {
+        console.error(`  VALIDASI GAGAL: ${report.summary}`);
+        failures++;
+        continue;
+      }
+
+      fs.writeFileSync(
+        outputPath,
+        JSON.stringify(output, null, 2),
+        "utf-8",
+      );
+
+      manifest.documents[doc.document_id] = {
+        ...entry,
+        embedded_at: new Date().toISOString(),
+        embedded_signature: signature,
+      };
+
+      console.log(`  OK ${report.summary}`);
+      console.log(`  → ${outputPath}`);
+    } catch (error) {
+      failures++;
+      console.error(
+        `  GAGAL: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  manifest.generated_at = new Date().toISOString();
+  saveManifest(manifest);
+
+  if (failures > 0) {
+    console.error(`\nGagal: ${failures} dokumen.`);
     process.exit(1);
   }
+
+  console.log("\nSTEP 6 (embed) : PASS");
 }
 
 main().catch((error) => {

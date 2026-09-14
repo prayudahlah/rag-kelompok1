@@ -1,5 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 
+import { getGeminiApiKey } from "./config.js";
+
 export const MODEL = "gemini-embedding-001";
 export const DIMENSION = 768;
 
@@ -19,29 +21,75 @@ export interface Embedder {
   embed(texts: string[]): Promise<number[][]>;
 }
 
-function getStatus(err: unknown): number | undefined {
-  const status = (err as { status?: unknown })?.status;
+export interface EmbedderOptions {
+  /**
+   * Tipe tugas embedding Gemini, mis. "RETRIEVAL_DOCUMENT"
+   * (indexing) atau "RETRIEVAL_QUERY" (runtime).
+   */
+  taskType?: string;
+}
 
-  return typeof status === "number" ? status : undefined;
+interface ErrorDetail {
+  "@type"?: string;
+  retryDelay?: string;
+}
+
+function parseErrorMessage(
+  err: unknown,
+): { code?: number; details?: ErrorDetail[] } | null {
+  const message = (err as { message?: unknown })?.message;
+
+  if (typeof message !== "string") {
+    return null;
+  }
+
+  const trimmed = message.trim();
+
+  if (!trimmed.startsWith("{")) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as {
+      error?: { code?: number; details?: ErrorDetail[] };
+    };
+
+    return parsed.error ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function getStatus(err: unknown): number | undefined {
+  const direct = (err as { status?: unknown })?.status;
+
+  if (typeof direct === "number") {
+    return direct;
+  }
+
+  const parsed = parseErrorMessage(err);
+
+  return typeof parsed?.code === "number"
+    ? parsed.code
+    : undefined;
 }
 
 function getRetryDelayMs(err: unknown): number | undefined {
-  const retryInfo = (
+  const direct = (
     err as {
-      error?: {
-        details?: Array<{
-          "@type"?: string;
-          retryDelay?: string;
-        }>;
-      };
+      error?: { details?: ErrorDetail[] };
     }
   )?.error?.details;
 
-  if (!Array.isArray(retryInfo)) {
+  const details = Array.isArray(direct)
+    ? direct
+    : parseErrorMessage(err)?.details;
+
+  if (!Array.isArray(details)) {
     return undefined;
   }
 
-  const detail = retryInfo.find(
+  const detail = details.find(
     (item) =>
       item["@type"] ===
       "type.googleapis.com/google.rpc.RetryInfo",
@@ -80,15 +128,11 @@ function isTransient(err: unknown): boolean {
   return false;
 }
 
-export function createEmbedder(): Embedder {
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("GEMINI_API_KEY belum diatur di .env");
-  }
-
+export function createEmbedder(
+  options: EmbedderOptions = {},
+): Embedder {
   const ai = new GoogleGenAI({
-    apiKey,
+    apiKey: getGeminiApiKey(),
   });
 
   async function embedBatch(
@@ -99,6 +143,9 @@ export function createEmbedder(): Embedder {
       contents: texts,
       config: {
         outputDimensionality: DIMENSION,
+        ...(options.taskType
+          ? { taskType: options.taskType }
+          : {}),
       },
     });
 
@@ -164,18 +211,19 @@ export function createEmbedder(): Embedder {
         let waitMs: number;
 
         if (status === 429) {
-          const serverDelay = getRetryDelayMs(error);
+          const serverDelay =
+            getRetryDelayMs(error);
 
           waitMs =
             serverDelay !== undefined
-              ? serverDelay + 1000
+              ? serverDelay + 2000
               : Math.min(
-                  60000,
+                  90000,
                   1000 * 2 ** attempt,
                 );
         } else {
           waitMs = Math.min(
-            60000,
+            90000,
             1000 * 2 ** attempt,
           );
         }
@@ -198,4 +246,4 @@ export function createEmbedder(): Embedder {
       return withRetry(() => embedBatch(texts));
     },
   };
-}       
+}

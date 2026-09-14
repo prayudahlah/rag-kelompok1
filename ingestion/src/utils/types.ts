@@ -17,6 +17,7 @@ export interface Chunk {
   page_end: number;
   text: string;
   parent_id?: string | null;
+  context_header?: string | null;
 }
 
 export interface ValidationReport {
@@ -79,6 +80,10 @@ export interface ManifestEntry {
   parsed_at?: string | null;
   parsed_sha256?: string | null;
   parse_signature?: string | null;
+  embedded_at?: string | null;
+  embedded_signature?: string | null;
+  db_built_at?: string | null;
+  db_rows?: number | null;
 }
 
 export interface CorpusManifest {

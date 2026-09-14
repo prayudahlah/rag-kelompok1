@@ -107,8 +107,8 @@ function normalize(text: string): string {
       const next = findNextContentLine(lines, i + 1);
 
       if (next !== null) {
-        const t = truncated.toLowerCase();
-        const n = next.toLowerCase();
+        const t = normalizeForCompare(truncated).toLowerCase();
+        const n = normalizeForCompare(next).toLowerCase();
 
         // Jika baris lanjutan mengulang awal yang sama,
         // fragmen terpotong ini adalah artefak page break → buang.
@@ -120,6 +120,30 @@ function normalize(text: string): string {
           output.push(truncated);
           continue;
         }
+      }
+    }
+
+    // 10b. Fragmen terpotong tanpa penanda ". . ." yang diulang
+    //      setelah page break (mis. "e. pemrosesan" lalu
+    //      "e. pemrosesan Data Pribadi ...").
+    const nextAcrossPage = findNextContentLine(
+      lines,
+      i + 1,
+      true,
+    );
+
+    if (nextAcrossPage !== null) {
+      const t = normalizeForCompare(line).toLowerCase();
+      const n = normalizeForCompare(
+        nextAcrossPage,
+      ).toLowerCase();
+
+      if (
+        t.length >= 2 &&
+        n.startsWith(t) &&
+        n.length > t.length
+      ) {
+        continue;
       }
     }
 
@@ -160,18 +184,69 @@ function isPageMarkerLine(line: string): boolean {
 }
 
 /**
- * Mencari baris konten berikutnya, melewati baris kosong
- * dan penanda halaman.
+ * Baris yang akan dibuang/dinormalkan oleh tahap lain sehingga
+ * tidak dianggap sebagai konten saat lookahead.
+ */
+function isSkippableForLookahead(line: string): boolean {
+  const t = line.trim();
+
+  if (t === "") {
+    return true;
+  }
+
+  if (/^logo:/i.test(t)) return true;
+  if (/^seal:/i.test(t)) return true;
+  if (/^\[signature:/i.test(t)) return true;
+
+  if (
+    /^#{0,6}\s*PRESIDEN REPUBLIK INDONESIA$/i.test(t)
+  ) {
+    return true;
+  }
+
+  if (/^#{0,6}\s*PRESIDEN$/i.test(t)) return true;
+  if (/^#{0,6}\s*REPUBLIK INDONESIA$/i.test(t)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Bentuk baris untuk perbandingan (buang prefix heading & bullet).
+ */
+function normalizeForCompare(line: string): string {
+  return line
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^\*\s+([a-z])\.\s*/i, "$1. ")
+    .trim();
+}
+
+/**
+ * Mencari baris konten berikutnya, melewati baris kosong, penanda
+ * halaman, dan artefak (logo/seal/signature/running header).
  */
 function findNextContentLine(
   lines: string[],
   start: number,
+  requirePageBreak = false,
 ): string | null {
+  let sawPageMarker = false;
+
   for (let j = start; j < lines.length; j++) {
     const candidate = lines[j].trim();
 
-    if (candidate === "" || isPageMarkerLine(candidate)) {
+    if (isPageMarkerLine(candidate)) {
+      sawPageMarker = true;
       continue;
+    }
+
+    if (isSkippableForLookahead(candidate)) {
+      continue;
+    }
+
+    if (requirePageBreak && !sawPageMarker) {
+      return null;
     }
 
     return candidate;
