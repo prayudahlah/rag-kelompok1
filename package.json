@@ -1,26 +1,20 @@
 {
-    "name": "rag-kelompok1",
-    "version": "1.0.0",
-    "description": "",
-    "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1"
-    },
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/prayudahlah/rag-kelompok1.git"
-    },
-    "keywords": [],
-    "author": "",
-    "license": "ISC",
-    "type": "commonjs",
-    "bugs": {
-        "url": "https://github.com/prayudahlah/rag-kelompok1/issues"
-    },
-    "homepage": "https://github.com/prayudahlah/rag-kelompok1#readme",
-    "private": true,
-    "workspaces": [
-        "ingestion",
-        "packages/*",
-        "server"
-    ]
+  "name": "rag-kelompok1",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "ingestion",
+    "packages/*",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build:shared": "npm run build -w @rag/shared",
+    "build": "npm run build:shared && npm run build -w server && npm run build -w client",
+    "typecheck": "npm run typecheck -w ingestion && npm run typecheck -w server && npm run typecheck -w client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
 }
