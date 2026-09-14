@@ -9,7 +9,7 @@ import {
   readSources,
   saveManifest,
 } from "../utils/manifest.js";
-import { DIMENSION, MODEL } from "../utils/embedder.js";
+import { DIMENSION, MODEL } from "@rag/shared";
 
 import type { ManifestEntry } from "../utils/types.js";
 

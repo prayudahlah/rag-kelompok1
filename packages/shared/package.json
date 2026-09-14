@@ -1,0 +1,27 @@
+{
+  "name": "@rag/shared",
+  "version": "1.0.0",
+  "description": "Shared types, embedder, dan klien LanceDB untuk ingestion & server",
+  "type": "module",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@google/genai": "^2.22.0",
+    "@lancedb/lancedb": "^0.38.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.4",
+    "typescript": "^7.0.2"
+  }
+}

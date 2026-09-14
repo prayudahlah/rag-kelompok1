@@ -3,7 +3,7 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 
-import { config } from "../utils/config.js";
+import { config, getGeminiApiKey } from "../utils/config.js";
 import {
   loadManifest,
   readSources,
@@ -14,7 +14,7 @@ import {
   createEmbedder,
   DIMENSION,
   MODEL,
-} from "../utils/embedder.js";
+} from "@rag/shared";
 
 import type { Chunk, ManifestEntry } from "../utils/types.js";
 
@@ -80,6 +80,7 @@ async function embedChunks(
 ): Promise<number[][]> {
   const embedder = createEmbedder({
     taskType: TASK_TYPE,
+    apiKey: getGeminiApiKey(),
   });
 
   const total = chunks.length;

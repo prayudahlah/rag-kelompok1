@@ -19,9 +19,9 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@google/genai": "^2.22.0",
     "@lancedb/lancedb": "^0.38.0",
     "@llamaindex/llama-cloud": "^2.16.0",
+    "@rag/shared": "*",
     "dotenv": "^17.4.2"
   },
   "devDependencies": {

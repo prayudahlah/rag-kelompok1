@@ -19,6 +19,8 @@
     "homepage": "https://github.com/prayudahlah/rag-kelompok1#readme",
     "private": true,
     "workspaces": [
-        "ingestion"
+        "ingestion",
+        "packages/*",
+        "server"
     ]
 }
