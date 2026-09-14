@@ -1,0 +1,22 @@
+{
+  "name": "eval",
+  "version": "1.0.0",
+  "description": "Harness evaluasi RAG PDP (retrieval + jawaban) dengan chart SVG",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "run": "tsx run.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@google/genai": "^2.22.0",
+    "dotenv": "^17.4.2",
+    "vega": "*",
+    "vega-lite": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.4",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}

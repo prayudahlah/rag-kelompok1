@@ -9,4 +9,7 @@ data/normalized/
 data/chunks/
 data/lancedb/
 
+# Hasil evaluasi mentah (generated)
+eval/results/
+
 *.log
