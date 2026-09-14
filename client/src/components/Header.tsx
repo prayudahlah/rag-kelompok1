@@ -1,15 +1,12 @@
 import { Menu, Settings, Trash2 } from "lucide-react";
-import type { AppMode } from "../types/chat";
 
 interface Props {
-  mode: AppMode;
   hasMessages: boolean;
-  onToggleMode: () => void;
   onToggleSidebar: () => void;
   onClearChat: () => void;
 }
 
-export function Header({ mode, hasMessages, onToggleMode, onToggleSidebar, onClearChat }: Props) {
+export function Header({ hasMessages, onToggleSidebar, onClearChat }: Props) {
   return (
     <header className="header">
       <button className="header__menu-btn" onClick={onToggleSidebar} title="Toggle sidebar">
@@ -29,15 +26,6 @@ export function Header({ mode, hasMessages, onToggleMode, onToggleSidebar, onCle
             <span>Hapus Chat</span>
           </button>
         )}
-
-        <button
-          className={`header__mode-toggle header__mode-toggle--${mode}`}
-          onClick={onToggleMode}
-          title={mode === "mock" ? "Beralih ke Live Mode" : "Beralih ke Demo Mode"}
-        >
-          <span className="header__mode-dot" />
-          {mode === "mock" ? "Demo" : "Live"}
-        </button>
 
         <button className="header__settings-btn" title="Pengaturan">
           <Settings size={18} strokeWidth={1.8} />

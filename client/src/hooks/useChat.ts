@@ -9,8 +9,6 @@ function nextId(): string {
   return `msg-${Date.now()}-${idCounter}`;
 }
 
-const HISTORY_WINDOW = 6;
-
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -27,7 +25,6 @@ export function useChat() {
     };
 
     const currentMessages = messagesRef.current;
-    const historyForRewrite = currentMessages.slice(-HISTORY_WINDOW);
 
     setMessages((prev) => {
       messagesRef.current = [...prev, userMessage];
@@ -37,13 +34,16 @@ export function useChat() {
     setError(null);
 
     try {
-      const response = await sendQuestion(question, historyForRewrite);
+      const response = await sendQuestion(question, currentMessages);
 
       const assistantMessage: Message = {
         id: nextId(),
         role: "assistant",
         content: response.answer,
         sources: response.sources,
+        citations: response.citations,
+        usedFallback: response.usedFallback,
+        notice: response.notice,
         timestamp: new Date(),
       };
 

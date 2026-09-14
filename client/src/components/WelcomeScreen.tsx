@@ -7,8 +7,8 @@ interface Props {
 const sampleQuestions = [
   "Apa itu data pribadi?",
   "Apa saja hak subjek data pribadi?",
-  "Siapa yang mengatur pelindungan data pribadi?",
-  "Apa sanksi pelanggaran UU PDP?",
+  "Bagaimana kewajiban pengendali data pribadi?",
+  "Apa sanksi jika terjadi kebocoran data?",
 ];
 
 export function WelcomeScreen({ onSend }: Props) {
@@ -19,7 +19,8 @@ export function WelcomeScreen({ onSend }: Props) {
       </div>
       <h2 className="welcome__title">Selamat datang di PDP Assistant</h2>
       <p className="welcome__desc">
-        Tanyakan apa saja tentang UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi.
+        Tanyakan apa saja tentang UU No. 27 Tahun 2022 (Pelindungan Data Pribadi) dan
+        PP No. 71 Tahun 2019 (Penyelenggaraan Sistem dan Transaksi Elektronik).
       </p>
 
       <div className="welcome__samples">

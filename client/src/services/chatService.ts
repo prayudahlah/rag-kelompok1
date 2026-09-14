@@ -1,44 +1,59 @@
-import type { ChatResponse, Message } from "../types/chat";
-import { findMockResponse } from "../data/mock";
+import type { ChatResponse, Message, SearchMode } from "../types/chat";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
-interface HistoryMessage {
+interface ApiMessage {
   role: "user" | "assistant";
   content: string;
+}
+
+export interface SendOptions {
+  k?: number;
+  mode?: SearchMode;
 }
 
 export async function sendQuestion(
   question: string,
   history: Message[] = [],
+  options: SendOptions = {},
 ): Promise<ChatResponse> {
-  const useMock = import.meta.env.VITE_USE_MOCK === "true";
-
-  if (useMock) {
-    await new Promise((resolve) => setTimeout(resolve, Math.random() * 800 + 400));
-    return findMockResponse(question);
-  }
-
-  const historyMessages: HistoryMessage[] = history
-    .filter((msg) => msg.role === "user" || msg.role === "assistant")
-    .slice(-6)
-    .map((msg) => ({
-      role: msg.role,
-      content: msg.content,
-    }));
+  const messages: ApiMessage[] = [
+    ...history
+      .filter((msg) => msg.role === "user" || msg.role === "assistant")
+      .map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      })),
+    { role: "user", content: question },
+  ];
 
   const res = await fetch(`${API_URL}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      question,
-      history: historyMessages.length > 0 ? historyMessages : undefined,
+      messages,
+      k: options.k ?? 6,
+      mode: options.mode ?? "hybrid",
     }),
   });
 
   if (!res.ok) {
-    throw new Error(`Server error: ${res.status}`);
+    let detail = `Server error: ${res.status}`;
+
+    try {
+      const body = (await res.json()) as {
+        error?: { message?: string };
+      };
+
+      if (body?.error?.message) {
+        detail = body.error.message;
+      }
+    } catch {
+      // respons bukan JSON; pakai pesan default
+    }
+
+    throw new Error(detail);
   }
 
-  return res.json();
+  return (await res.json()) as ChatResponse;
 }

@@ -1,9 +1,23 @@
 import { Shield, User } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Message } from "../types/chat";
 import { SourceCard } from "./SourceCard";
+import "../markdown.css";
 
 interface Props {
   message: Message;
+}
+
+/**
+ * Ubah penanda sitasi [S1], [S2], ... menjadi tautan markdown
+ * yang mengarah ke kartu sumber (#source-1, #source-2, ...).
+ */
+function withCitationLinks(content: string): string {
+  return content.replace(
+    /\[S(\d+)\]/g,
+    (_match, number: string) => `[[S${number}]](#source-${number})`,
+  );
 }
 
 export function ChatMessage({ message }: Props) {
@@ -22,8 +36,22 @@ export function ChatMessage({ message }: Props) {
 
       <div className="message__body">
         <div className={`message__bubble ${isUser ? "message__bubble--user" : "message__bubble--assistant"}`}>
-          {message.content}
+          {isUser ? (
+            message.content
+          ) : (
+            <div className="markdown">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {withCitationLinks(message.content)}
+              </ReactMarkdown>
+            </div>
+          )}
         </div>
+
+        {!isUser && (message.usedFallback || message.notice) && (
+          <div className="message__notice">
+            {message.notice ?? "Mode fallback: pencarian kata kunci (FTS)."}
+          </div>
+        )}
 
         <div className="message__meta">
           <span className="message__time">{timeStr}</span>

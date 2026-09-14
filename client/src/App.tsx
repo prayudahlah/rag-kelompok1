@@ -8,7 +8,7 @@ import { ChatInput } from "./components/ChatInput";
 import { LoadingIndicator } from "./components/LoadingIndicator";
 import { ErrorCard } from "./components/ErrorCard";
 import { HistoryList } from "./components/HistoryList";
-import type { ActivePage, AppMode } from "./types/chat";
+import type { ActivePage } from "./types/chat";
 import "./App.css";
 
 function App() {
@@ -24,9 +24,6 @@ function App() {
     deleteHistorySession,
   } = useChat();
 
-  const [mode, setMode] = useState<AppMode>(
-    import.meta.env.VITE_USE_MOCK === "true" ? "mock" : "live"
-  );
   const [activePage, setActivePage] = useState<ActivePage>("chat");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -34,10 +31,6 @@ function App() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading, error]);
-
-  function handleToggleMode() {
-    setMode((prev) => (prev === "mock" ? "live" : "mock"));
-  }
 
   function handleRetry() {
     dismissError();
@@ -57,15 +50,12 @@ function App() {
       <Sidebar
         activePage={activePage}
         onNavigate={setActivePage}
-        mode={mode}
         collapsed={!sidebarOpen}
       />
 
       <div className="main">
         <Header
-          mode={mode}
           hasMessages={messages.length > 0}
-          onToggleMode={handleToggleMode}
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
           onClearChat={clearChat}
         />
@@ -101,12 +91,12 @@ function App() {
               <h2>Tentang PDP Assistant</h2>
               <p>
                 PDP Assistant adalah aplikasi RAG (Retrieval-Augmented Generation) untuk tanya jawab
-                mengenai Undang-Undang Republik Indonesia Nomor 27 Tahun 2022 tentang Pelindungan
-                Data Pribadi.
+                mengenai dokumen hukum Pelindungan Data Pribadi di Indonesia, mencakup Undang-Undang
+                Nomor 27 Tahun 2022 (UU PDP) dan Peraturan Pemerintah Nomor 71 Tahun 2019 (PP PSTE).
               </p>
               <p>
-                Aplikasi ini dibangun dengan React, TypeScript, dan terintegrasi dengan Gemini API
-                untuk menghasilkan jawaban yang akurat berdasarkan dokumen hukum.
+                Aplikasi ini dibangun dengan React, TypeScript, Express, LanceDB, dan terintegrasi
+                dengan Gemini API untuk menghasilkan jawaban beserta sitasi pasal.
               </p>
             </div>
           )}

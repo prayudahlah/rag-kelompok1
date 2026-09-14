@@ -1,14 +1,13 @@
 import { Shield, MessageSquare, FileText, Info, ShieldCheck } from "lucide-react";
-import type { ActivePage, AppMode } from "../types/chat";
+import type { ActivePage } from "../types/chat";
 
 interface Props {
   activePage: ActivePage;
   onNavigate: (page: ActivePage) => void;
-  mode: AppMode;
   collapsed?: boolean;
 }
 
-export function Sidebar({ activePage, onNavigate, mode, collapsed }: Props) {
+export function Sidebar({ activePage, onNavigate, collapsed }: Props) {
   const navItems = [
     { id: "chat" as const, label: "Chat", icon: MessageSquare },
     { id: "riwayat" as const, label: "Riwayat", icon: FileText },
@@ -24,7 +23,7 @@ export function Sidebar({ activePage, onNavigate, mode, collapsed }: Props) {
         {!collapsed && (
           <div className="sidebar__brand">
             <h1 className="sidebar__title">PDP Assistant</h1>
-            <span className="sidebar__subtitle">UU No. 27 Tahun 2022</span>
+            <span className="sidebar__subtitle">UU 27/2022 &amp; PP 71/2019</span>
           </div>
         )}
       </div>
@@ -48,16 +47,12 @@ export function Sidebar({ activePage, onNavigate, mode, collapsed }: Props) {
       </nav>
 
       <div className="sidebar__footer">
-        <div className={`sidebar__status sidebar__status--${mode}`}>
+        <div className="sidebar__status sidebar__status--live">
           <ShieldCheck size={16} strokeWidth={2} />
           {!collapsed && (
             <div className="sidebar__status-text">
-              <span className="sidebar__status-label">
-                {mode === "mock" ? "Demo Mode" : "Live Mode"}
-              </span>
-              <span className="sidebar__status-desc">
-                {mode === "mock" ? "Menggunakan data mock" : "Terhubung ke server"}
-              </span>
+              <span className="sidebar__status-label">Live Mode</span>
+              <span className="sidebar__status-desc">Terhubung ke server</span>
             </div>
           )}
         </div>
