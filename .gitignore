@@ -1,8 +1,20 @@
-.env
+# Dependencies
 node_modules/
+
+# Build
 dist/
 
-data/raw/
-data/lancedb/
+# Environment
+.env
 
+# Logs
 *.log
+
+# Database (bisa regenerate dari embedded.json)
+ingestion/data/lancedb/
+
+# Raw PDFs
+ingestion/data/raw/
+
+# Embedded JSON (bisa regenerate dari chunks.json + Gemini API)
+ingestion/data/chunks/*.embedded.json

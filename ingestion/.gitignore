@@ -1,8 +1,8 @@
-.env
 node_modules/
 dist/
-
-data/raw/
-data/lancedb/
-
+.env
 *.log
+
+data/lancedb/
+data/raw/
+data/chunks/*.embedded.json
