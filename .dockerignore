@@ -1,0 +1,33 @@
+# Dependencies (di-install ulang di dalam image)
+node_modules
+**/node_modules
+
+# VCS & editor
+.git
+.gitignore
+.vscode
+.idea
+
+# Build output (dibangun ulang di dalam image)
+dist
+**/dist
+**/*.tsbuildinfo
+
+# Artefak ingestion yang tidak dibutuhkan saat runtime
+# (ingestion/data/lancedb TETAP disertakan karena di-bake ke image)
+ingestion/data/raw
+ingestion/data/parsed
+ingestion/data/normalized
+ingestion/data/chunks
+
+# Hasil evaluasi
+eval/results
+
+# Rahasia & log
+.env
+**/.env
+*.log
+
+# Dokumentasi
+docs
+README.md

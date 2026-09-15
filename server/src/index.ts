@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+
 import cors from "cors";
 import express from "express";
 import swaggerUi from "swagger-ui-express";
@@ -25,7 +28,29 @@ app.use(
 
 app.use("/api", apiRouter);
 
-app.use((_req, res) => {
+// Sajikan hasil build client (Vite) bila tersedia. Di mode dev, client
+// dilayani Vite sehingga build ini biasanya belum ada.
+const clientIndexHtml = path.join(
+  config.clientDistPath,
+  "index.html",
+);
+const hasClientBuild = fs.existsSync(clientIndexHtml);
+
+if (hasClientBuild) {
+  app.use(express.static(config.clientDistPath));
+}
+
+app.use((req, res) => {
+  if (
+    hasClientBuild &&
+    (req.method === "GET" || req.method === "HEAD") &&
+    !req.path.startsWith("/api")
+  ) {
+    res.sendFile(clientIndexHtml);
+
+    return;
+  }
+
   res.status(404).json({
     error: { message: "Endpoint tidak ditemukan." },
   });
