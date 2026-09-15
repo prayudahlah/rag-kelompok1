@@ -15,11 +15,27 @@ export function loadHistory(): HistorySession[] {
   }
 }
 
-export function saveSession(messages: Message[]): HistorySession | null {
+export function saveSession(messages: Message[], existingSessionId?: string | null): HistorySession | null {
   if (messages.length === 0) return null;
 
   const firstUserMsg = messages.find((m) => m.role === "user");
   const title = firstUserMsg?.content.slice(0, 60) || "Percakapan baru";
+
+  const history = loadHistory();
+
+  if (existingSessionId) {
+    const idx = history.findIndex((s) => s.id === existingSessionId);
+    if (idx !== -1) {
+      history[idx] = {
+        ...history[idx],
+        title,
+        timestamp: new Date().toISOString(),
+        messages,
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(history.slice(0, MAX_SESSIONS)));
+      return history[idx];
+    }
+  }
 
   const session: HistorySession = {
     id: `session-${Date.now()}`,
@@ -28,7 +44,6 @@ export function saveSession(messages: Message[]): HistorySession | null {
     messages,
   };
 
-  const history = loadHistory();
   history.unshift(session);
 
   const trimmed = history.slice(0, MAX_SESSIONS);
@@ -43,6 +58,3 @@ export function deleteSession(sessionId: string): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
 }
 
-export function clearHistory(): void {
-  localStorage.removeItem(STORAGE_KEY);
-}

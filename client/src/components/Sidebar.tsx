@@ -1,4 +1,4 @@
-import { Shield, MessageSquare, FileText, Info, ShieldCheck } from "lucide-react";
+import { Shield, MessageSquare, FileText, Info } from "lucide-react";
 import type { ActivePage } from "../types/chat";
 
 interface Props {
@@ -45,18 +45,6 @@ export function Sidebar({ activePage, onNavigate, collapsed }: Props) {
           );
         })}
       </nav>
-
-      <div className="sidebar__footer">
-        <div className="sidebar__status sidebar__status--live">
-          <ShieldCheck size={16} strokeWidth={2} />
-          {!collapsed && (
-            <div className="sidebar__status-text">
-              <span className="sidebar__status-label">Live Mode</span>
-              <span className="sidebar__status-desc">Terhubung ke server</span>
-            </div>
-          )}
-        </div>
-      </div>
     </aside>
   );
 }

@@ -15,6 +15,7 @@ export function useChat() {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistorySession[]>(() => loadHistory());
   const messagesRef = useRef<Message[]>([]);
+  const currentSessionIdRef = useRef<string | null>(null);
 
   const sendMessage = useCallback(async (question: string) => {
     const userMessage: Message = {
@@ -50,7 +51,10 @@ export function useChat() {
       setMessages((prev) => {
         const updated = [...prev, assistantMessage];
         messagesRef.current = updated;
-        saveSession(updated);
+        const saved = saveSession(updated, currentSessionIdRef.current);
+        if (saved) {
+          currentSessionIdRef.current = saved.id;
+        }
         setHistory(loadHistory());
         return updated;
       });
@@ -62,6 +66,11 @@ export function useChat() {
   }, []);
 
   const clearChat = useCallback(() => {
+    if (currentSessionIdRef.current) {
+      deleteSession(currentSessionIdRef.current);
+      setHistory(loadHistory());
+    }
+    currentSessionIdRef.current = null;
     messagesRef.current = [];
     setMessages([]);
     setError(null);
@@ -72,6 +81,7 @@ export function useChat() {
   }, []);
 
   const loadSession = useCallback((session: HistorySession) => {
+    currentSessionIdRef.current = session.id;
     messagesRef.current = session.messages;
     setMessages(session.messages);
     setError(null);
@@ -79,10 +89,12 @@ export function useChat() {
 
   const deleteHistorySession = useCallback((sessionId: string) => {
     deleteSession(sessionId);
-    setHistory(loadHistory());
-  }, []);
-
-  const refreshHistory = useCallback(() => {
+    if (currentSessionIdRef.current === sessionId) {
+      currentSessionIdRef.current = null;
+      messagesRef.current = [];
+      setMessages([]);
+      setError(null);
+    }
     setHistory(loadHistory());
   }, []);
 
@@ -96,6 +108,5 @@ export function useChat() {
     dismissError,
     loadSession,
     deleteHistorySession,
-    refreshHistory,
   };
 }

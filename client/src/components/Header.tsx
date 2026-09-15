@@ -1,4 +1,4 @@
-import { Menu, Settings, Trash2 } from "lucide-react";
+import { Menu, Trash2 } from "lucide-react";
 
 interface Props {
   hasMessages: boolean;
@@ -27,9 +27,6 @@ export function Header({ hasMessages, onToggleSidebar, onClearChat }: Props) {
           </button>
         )}
 
-        <button className="header__settings-btn" title="Pengaturan">
-          <Settings size={18} strokeWidth={1.8} />
-        </button>
       </div>
     </header>
   );

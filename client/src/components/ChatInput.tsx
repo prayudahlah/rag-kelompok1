@@ -1,5 +1,5 @@
 import { useState, useRef, type FormEvent, type KeyboardEvent } from "react";
-import { Send, Paperclip } from "lucide-react";
+import { Send } from "lucide-react";
 
 interface Props {
   onSend: (question: string) => void;
@@ -39,10 +39,6 @@ export function ChatInput({ onSend, disabled }: Props) {
   return (
     <form className="chat-input" onSubmit={handleSubmit}>
       <div className="chat-input__wrapper">
-        <button type="button" className="chat-input__attach" title="Lampirkan file" tabIndex={-1}>
-          <Paperclip size={18} strokeWidth={1.8} />
-        </button>
-
         <textarea
           ref={textareaRef}
           className="chat-input__field"

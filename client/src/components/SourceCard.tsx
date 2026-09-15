@@ -19,6 +19,9 @@ export function SourceCard({ sources }: Props) {
 
   if (sources.length === 0) return null;
 
+  const VISIBLE_DEFAULT = 2;
+  const visibleSources = expanded ? sources : sources.slice(0, VISIBLE_DEFAULT);
+
   return (
     <div className="source-section">
       <div className="source-section__label">
@@ -27,7 +30,7 @@ export function SourceCard({ sources }: Props) {
       </div>
 
       <div className="source-section__list">
-        {sources.map((source, index) => (
+        {visibleSources.map((source, index) => (
           <SourceItem
             key={source.chunk_id}
             source={source}
@@ -37,7 +40,7 @@ export function SourceCard({ sources }: Props) {
         ))}
       </div>
 
-      {sources.length > 2 && (
+      {sources.length > VISIBLE_DEFAULT && (
         <button className="source-section__toggle" onClick={() => setExpanded(!expanded)}>
           {expanded ? (
             <>
@@ -45,7 +48,7 @@ export function SourceCard({ sources }: Props) {
             </>
           ) : (
             <>
-              <ChevronDown size={14} /> Tampilkan {sources.length - 2} sumber lainnya
+              <ChevronDown size={14} /> Tampilkan {sources.length - VISIBLE_DEFAULT} sumber lainnya
             </>
           )}
         </button>
